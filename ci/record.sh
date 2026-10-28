@@ -1,18 +1,29 @@
 #!/bin/bash
 # Record the live NPL match, shrink it, and attach it to a GitHub release.
-# Runs on the self-hosted runner (Nepali IP: the CDN is not reachable from
-# GitHub-hosted runners as far as we know). No login needed -- channels are
-# served anonymously and discovery just probes npl_live1..8.
 #
-# Exit codes: 0 = nothing to do or recorded fine; 1 = something broke.
+# Runs on the self-hosted runner (k2): a Nepali IP, which the CDN is known to
+# serve. No login needed -- the channels are anonymous and discovery just probes
+# npl_live1..8.
+#
+# Kept deliberately light: ffmpeg is capped to a handful of threads, mono audio,
+# and the intermediates are deleted once the release is published (k2 has ~56 GB).
+#
+# Exit codes: 0 = nothing to do, or recorded and published; 1 = broke.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# static toolchain on k2, so no brew/node install is needed
+export PATH="$HOME/npl-ci/bin:$PATH"
+
 API=https://ott-resources.geniustv.geniussystems.com.np/public/sports/v1/namespaces/-/tournaments
 EDGE=https://ottnlive-fstream.nettvstreamz.com
-OUT=${OUT:-$HOME/npl-out}
+OUT=${OUT:-$HOME/npl-ci/out}
 BITRATE=${BITRATE:-300k}
+THREADS=${THREADS:-4}
 mkdir -p "$OUT"
+
+command -v node >/dev/null || { echo "node not on PATH ($PATH)"; exit 1; }
+command -v ffmpeg >/dev/null || { echo "ffmpeg not on PATH"; exit 1; }
 
 # ---- 1. is a match live? ---------------------------------------------------
 live=$(curl -sS --max-time 20 "$API/fixtures" | node -e '
@@ -40,12 +51,11 @@ done
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
 
-# ---- 3. prefer the 480p variant (no downscale needed later) ----------------
-VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d '\r' | tr -d ' ')
+VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r')
 if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r'); fi
 echo "variant: $VAR"
 
-# ---- 4. record until the feed goes quiet -----------------------------------
+# ---- 3. record until the feed goes quiet -----------------------------------
 node ci/capture.js \
   --host "$EDGE" --path "/ottnpweb/$CH" --variant "$VAR" \
   --out "$OUT" --name "${SLUG}_480p" --cb \
@@ -53,21 +63,31 @@ node ci/capture.js \
 
 TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
 if [ -z "$TS" ]; then echo "nothing recorded"; exit 1; fi
-echo "recorded: $TS ($(du -h "$TS" | cut -f1))"
+echo "recorded: $(du -h "$TS" | cut -f1)"
 
-# ---- 5. shrink: AV1 480p, stereo -> mono opus ------------------------------
-OUTV="${TS%.ts}.av1.mp4"
+# ---- 4. shrink: lowest-bitrate codec this ffmpeg has, mono audio ------------
+ENC=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
+if grep -q libsvtav1 <<<"$ENC"; then
+  VOPTS=(-c:v libsvtav1 -b:v "$BITRATE" -svtav1-params "lp=${THREADS}")
+elif grep -q libx265 <<<"$ENC"; then
+  VOPTS=(-c:v libx265 -b:v 500k -x265-params "pools=${THREADS}")
+else
+  VOPTS=(-c:v libx264 -b:v 900k)
+fi
+if grep -q libopus <<<"$ENC"; then AOPTS=(-c:a libopus -b:a 48k); else AOPTS=(-c:a aac -b:a 64k); fi
+
+OUTV="${TS%.ts}.mp4"
 ffmpeg -hide_banner -loglevel error -y -i "$TS" \
-  -vf scale=854:480 -c:v libsvtav1 -b:v "$BITRATE" -c:a libopus -b:a 48k -ac 1 \
-  -movflags +faststart "$OUTV"
-echo "encoded: $OUTV ($(du -h "$OUTV" | cut -f1))"
+  -vf "scale=854:480" -threads "$THREADS" -filter_threads 2 \
+  "${VOPTS[@]}" "${AOPTS[@]}" -ac 1 -movflags +faststart "$OUTV"
+echo "encoded: $(du -h "$OUTV" | cut -f1)"
 
-# ---- 6. publish as a release asset ----------------------------------------
+# ---- 5. publish as a release asset ----------------------------------------
 TAG="npl-$(date -u -d "@${START:-$(date +%s)}" +%Y%m%d)-$(echo "$KEY" | tail -c 7)"
-TITLE="NPL ${SLUG} — $(date -u -d "@${START:-$(date +%s)}" +%d %b %Y)"
-gh release create "$TAG" "$OUTV" \
-  --title "$TITLE" \
-  --notes "Auto-recorded from the live feed. AV1 480p, ${BITRATE}." \
-  --latest 2>&1 | tail -2
+TITLE="NPL ${SLUG} — $(date -u -d "@${START:-$(date +%s)}" +%d\ %b\ %Y)"
+gh release create "$TAG" "$OUTV" --title "$TITLE" \
+  --notes "Auto-recorded from the live feed. ${BITRATE} video, mono audio." --latest 2>&1 | tail -2
 
+# ---- 6. reclaim disk (the release asset is the archive now) ---------------
+rm -f "$TS" "$OUTV"
 echo "done: $TAG"
