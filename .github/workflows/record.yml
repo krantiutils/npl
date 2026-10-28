@@ -1,0 +1,34 @@
+name: record
+
+# Records the live NPL match on the self-hosted runner (Nepali IP), shrinks it
+# to AV1 480p and attaches it to a release.
+#
+# Deliberately triggered only by schedule / manual / repository_dispatch.
+# Do NOT add pull_request here: this runs on a self-hosted runner in a public
+# repo, and a fork PR would otherwise execute code on the host.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [match-live]
+
+# one recording at a time; a queued run waits rather than overlapping
+concurrency:
+  group: npl-record
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: [self-hosted, npl]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: record, encode, publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./ci/record.sh
