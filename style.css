@@ -1,0 +1,111 @@
+:root {
+  --fg: #111;
+  --dim: #777;
+  --line: #ddd;
+  --bg: #fff;
+  --live: #c00;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+header {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+
+.mark { font-weight: 700; letter-spacing: .12em; }
+#headline { color: var(--dim); }
+#status { margin-left: auto; color: var(--dim); }
+#status.live { color: var(--live); }
+#status.warn { color: var(--live); }
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px;
+}
+
+#stage { margin-bottom: 18px; }
+#player {
+  width: 100%;
+  display: block;
+  background: #000;
+  aspect-ratio: 16 / 9;
+}
+
+#next { margin-bottom: 22px; }
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.row .teams { font-weight: 600; }
+.row .when { color: var(--dim); }
+
+.table-block { margin-bottom: 26px; }
+
+h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px;
+}
+
+td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+th:not(:nth-child(2)), td.num { text-align: right; }
+td.num { color: var(--dim); }
+td.strong { color: var(--fg); font-weight: 600; }
+td:nth-child(1) { color: var(--dim); }
+
+footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e8e8e8;
+    --dim: #8a8a8a;
+    --line: #2a2a2a;
+    --bg: #101010;
+    --live: #ff5a5a;
+  }
+  td { border-bottom-color: #1c1c1c; }
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NPL</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" defer></script>
+</head>
+<body>
+<header>
+  <span class="mark">NPL</span>
+  <span id="headline">—</span>
+  <span id="status"></span>
+</header>
+
+<main>
+  <div id="stage" hidden>
+    <video id="player" playsinline muted controls></video>
+  </div>
+
+  <section id="next" hidden></section>
+
+  <section id="standings"></section>
+</main>
+
+<footer>data: NetTV public fixtures · refreshes every 60s</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
