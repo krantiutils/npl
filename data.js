@@ -3,7 +3,15 @@
 
 export const API = 'https://ott-resources.geniustv.geniussystems.com.np/public/sports/v1/namespaces/-/tournaments';
 export const EDGE = 'https://ottnlive-fstream.nettvstreamz.com';
-export const CHANNELS = ['npl_live1', 'npl_live2', 'npl_live3', 'npl_live4', 'npl_live5', 'npl_live6', 'npl_live7', 'npl_live8'];
+
+// Two layouts have been seen for the same league, and they are not interchangeable:
+//   /live_hls/npl_match_<n>/playlist.m3u8   match-day feed (underscore before the number)
+//   /ottnpweb/npl_live<n>/index.m3u8        channel feed (no underscore)
+// Probe both; whichever answers is the feed for the live match.
+export const CHANNELS = [
+  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/live_hls/npl_match_${n}/playlist.m3u8`),
+  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/ottnpweb/npl_live${n}/index.m3u8`),
+];
 
 const getJSON = async (url) => {
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -85,8 +93,8 @@ export function parseMaster(text) {
  * match feed is publishing.
  */
 export async function findLiveChannel({ timeout = 5000 } = {}) {
-  const probe = async (name) => {
-    const url = `${EDGE}/ottnpweb/${name}/index.m3u8`;
+  const probe = async (pathname) => {
+    const url = `${EDGE}${pathname}`;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), timeout);
     try {
@@ -96,7 +104,7 @@ export async function findLiveChannel({ timeout = 5000 } = {}) {
       if (!text.startsWith('#EXTM3U')) return null;
       const variants = parseMaster(text);
       if (!variants.length) return null;
-      return { name, url, variants };
+      return { path: pathname, url, variants };
     } catch {
       return null;
     } finally {
@@ -104,7 +112,7 @@ export async function findLiveChannel({ timeout = 5000 } = {}) {
     }
   };
 
-  // all channels at once: faster than serial and there are only eight
+  // all candidates at once: there are only sixteen and they answer in ms
   const results = await Promise.all(CHANNELS.map(probe));
   return results.find(Boolean) || null;
 }
@@ -123,5 +131,24 @@ export function fmtTime(iso) {
     });
   } catch {
     return iso;
+  }
+}
+
+/**
+ * CI publishes the resolved feed path to live.json at the repo root (it changes
+ * between matches: /live_hls/npl_match_3 one day, /ottnpweb/npl_live3 another).
+ * Prefer that hint; fall back to probing when it is missing or stale.
+ */
+export async function fetchLiveHint({ maxAgeMin = 20 } = {}) {
+  try {
+    const res = await fetch('live.json', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const j = await res.json();
+    if (!j || !j.live || typeof j.path !== 'string') return null;
+    const ageMin = (Date.now() - new Date(j.checked).getTime()) / 60000;
+    if (!Number.isFinite(ageMin) || ageMin > maxAgeMin) return null;
+    return j;
+  } catch {
+    return null;
   }
 }

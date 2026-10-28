@@ -2,7 +2,7 @@
 // and a footer that is always the standings.
 import {
   fetchFixtures, splitFixtures, fetchStandings, standingsGroups,
-  findLiveChannel, fmtTime,
+  findLiveChannel, fetchLiveHint, fmtTime, EDGE,
 } from './data.js';
 
 // Public deploy switch. Set to false before publishing this on GitHub Pages if you
@@ -59,7 +59,7 @@ function renderLive(match, channel) {
   $('#headline').textContent = match ? `${match.short_name} — live` : 'live';
   if (channel) {
     setStatus(`${match?.name || ''}`, 'live');
-    attachStream(channel.url, channel.name);
+    attachStream(channel.url, channel.path);
   } else {
     setStatus('match is live but no feed is publishing', 'warn');
   }
@@ -147,7 +147,8 @@ async function refresh() {
     renderNext(next);
 
     if (live.length) {
-      const channel = await findLiveChannel();
+      const hint = await fetchLiveHint();
+      const channel = hint ? { url: EDGE + hint.path, path: hint.path } : await findLiveChannel();
       renderLive(live[0], channel);
     } else {
       renderIdle(next);

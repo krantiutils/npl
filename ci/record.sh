@@ -89,6 +89,25 @@ if [ -z "$live" ] && [ -z "$CH" ]; then echo "no live match and no publishing ch
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
 
+# publish the resolved path for the website (public repo -> Pages). No token here:
+# the channel is served anonymously, so the page only needs the path.
+live_json() {
+  node -e '
+    const [path, checked, live] = process.argv.slice(1);
+    process.stdout.write(JSON.stringify({ checked, live: live === "1", path: live === "1" ? path : null }, null, 2) + "\n");
+  ' "/$CH" "$(date -u +%FT%TZ)" "$([ -n "$CH" ] && echo 1 || echo 0)"
+}
+if [ "$(cat live.json 2>/dev/null || true)" != "$(live_json)" ]; then
+  live_json > live.json
+  git add live.json
+  git -c user.name="npl-ci" -c user.email="npl-ci@users.noreply.github.com" \
+      commit -q -m "ci: live url -> /$CH" || true
+  git push -q origin HEAD:main || echo "warn: could not push live.json"
+  echo "published live.json: /$CH"
+else
+  echo "live.json unchanged"
+fi
+
 # fixtures can lag the feed (toss / pre-show): still record, with a generic name
 if [ -z "$live" ]; then
   KEY="unknown"

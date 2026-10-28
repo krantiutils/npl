@@ -41,7 +41,7 @@ check('parseMaster on 3 variants', parseMaster(
 ).map((v) => v.height).join(',') === '1080,720,480');
 
 const ch = await findLiveChannel({ timeout: 4000 });
-check('channel probe returns channel or null', ch === null || typeof ch.name === 'string', ch ? `live on ${ch.name}` : 'no feed publishing');
+check('channel probe returns channel or null', ch === null || typeof ch.path === 'string', ch ? `live at ${ch.path}` : 'no feed publishing');
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
 process.exit(failed ? 1 : 0);
