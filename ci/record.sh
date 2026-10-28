@@ -1,19 +1,23 @@
 #!/bin/bash
 # Record the live NPL match, shrink it, and attach it to a GitHub release.
 #
-# Runs on the self-hosted runner (k2): a Nepali IP, which the CDN is known to
-# serve. No login needed -- the channels are anonymous and discovery just probes
-# npl_live1..8.
+# Runs on the self-hosted runner (k2, Nepali IP). Two ways to find the feed:
+#   1. authoritative: mint stream_url from the subscriber API using NETTV_TOKEN
+#      (a repo secret). Gives the exact path+token for this match.
+#   2. fallback: probe the two public channel layouts anonymously.
+# Both are needed: (2) keeps working if the token expires, (1) survives the
+# layouts changing again (they changed once already, 27 Oct -> 28 Oct).
 #
-# Kept deliberately light: ffmpeg is capped to a handful of threads, mono audio,
-# and the intermediates are deleted once the release is published (k2 has ~56 GB).
+# Light on purpose: threads capped, mono audio, intermediates deleted after the
+# release is published (k2 has ~56 GB).
 #
 # Exit codes: 0 = nothing to do, or recorded and published; 1 = broke.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# static toolchain on k2, so no brew/node install is needed
-export PATH="$HOME/npl-ci/bin:$PATH"
+export PATH="$HOME/npl-ci/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+command -v node >/dev/null || { echo "node not on PATH ($PATH)"; exit 1; }
+command -v ffmpeg >/dev/null || { echo "ffmpeg not on PATH"; exit 1; }
 
 API=https://ott-resources.geniustv.geniussystems.com.np/public/sports/v1/namespaces/-/tournaments
 EDGE=https://ottnlive-fstream.nettvstreamz.com
@@ -22,10 +26,7 @@ BITRATE=${BITRATE:-300k}
 THREADS=${THREADS:-4}
 mkdir -p "$OUT"
 
-command -v node >/dev/null || { echo "node not on PATH ($PATH)"; exit 1; }
-command -v ffmpeg >/dev/null || { echo "ffmpeg not on PATH"; exit 1; }
-
-# ---- 1. is a match live? ---------------------------------------------------
+# ---- 1. is a match live? (public endpoint) --------------------------------
 live=$(curl -sS --max-time 20 "$API/fixtures" | node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
@@ -45,33 +46,50 @@ else
   echo "fixtures: no match marked live yet"
 fi
 
-# ---- 2. find a channel that is publishing ----------------------------------
-# Two different layouts exist for the same league:
-#   /live_hls/npl_match_<n>/playlist.m3u8    match-day feed (UNDERSCORE: npl_match_3)
-#   /ottnpweb/npl_live<n>/index.m3u8         channel feed (seen on 27 Oct)
-# Probe both, anonymously -- neither needs a token.
+# ---- 2a. authoritative path via the minted stream_url ---------------------
 CH=""
-for base in live_hls/npl_match_ ottnpweb/npl_live; do
-  case "$base" in
-    live_hls/*) file=playlist.m3u8 ;;
-    *)          file=index.m3u8 ;;
-  esac
-  for i in 1 2 3 4 5 6 7 8; do
-    code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/$base$i/$file")
-    # NB: compare without a pipe -- `head | grep -q` trips `set -o pipefail` via SIGPIPE
+TOKENQS=""
+if [ -n "${NETTV_TOKEN:-}" ] && [ -n "$live" ]; then
+  SU=$(curl -sS --max-time 12 \
+        -H "Authorization: Bearer $NETTV_TOKEN" -H "Accept: application/json" \
+        "https://ott-resources.geniustv.geniussystems.com.np/subscriber/sports/v1/namespaces/5/subscribers/${NETTV_SUBSCRIBER:-9337709}/stbs/${NETTV_STB:-voidash-5}/cricket/matches/$KEY/stream-url" \
+       | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).data.stream_url||"")}catch(e){}})')
+  if [ -n "$SU" ]; then
+    PB=$(printf '%s' "$SU" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##; s#^/#+#')
+    FN=$(printf '%s' "$SU" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#.*/##')
+    QS=$(printf '%s' "$SU" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
+    code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 8 "$EDGE/$PB/$FN?$QS")
     magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
-    if [ "$code" = "200" ] && [ "$magic" = "#EXTM3U" ]; then
-      CH="$base$i"; break 2
+    if [ "$magic" = "#EXTM3U" ]; then
+      CH="$PB"; TOKENQS="$QS"
+      echo "minted channel: $CH"
+    else
+      echo "minted url did not serve a playlist (HTTP $code), falling back to probing"
     fi
-  done
-done
+  fi
+fi
 
-# nothing live by either signal -> nothing to do
+# ---- 2b. anonymous fallback: probe both known layouts ---------------------
+if [ -z "$CH" ]; then
+  for base in live_hls/npl_match_ ottnpweb/npl_live; do
+    case "$base" in
+      live_hls/*) file=playlist.m3u8 ;;
+      *)          file=index.m3u8 ;;
+    esac
+    for i in 1 2 3 4 5 6 7 8; do
+      code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/$base$i/$file")
+      # NB: no pipe here -- `head | grep -q` trips pipefail via SIGPIPE
+      magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
+      if [ "$code" = "200" ] && [ "$magic" = "#EXTM3U" ]; then CH="$base$i"; break 2; fi
+    done
+  done
+fi
+
 if [ -z "$live" ] && [ -z "$CH" ]; then echo "no live match and no publishing channel"; exit 0; fi
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
 
-# if the fixtures endpoint is lagging (toss, pre-show) we still record, with a generic name
+# fixtures can lag the feed (toss / pre-show): still record, with a generic name
 if [ -z "$live" ]; then
   KEY="unknown"
   SLUG="match-$(date -u +%Y%m%d-%H%M)"
@@ -82,17 +100,18 @@ VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r'
 if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r'); fi
 echo "variant: $VAR"
 
-# ---- 3. record until the feed goes quiet -----------------------------------
+# ---- 3. record until the feed goes quiet ----------------------------------
 node ci/capture.cjs \
   --host "$EDGE" --path "/$CH" --variant "$VAR" \
+  ${TOKENQS:+--token "$TOKENQS"} \
   --out "$OUT" --name "${SLUG}_480p" --cb \
   --idle-stop 8 --max-hours 5
 
 TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
 if [ -z "$TS" ]; then echo "nothing recorded"; exit 1; fi
-echo "recorded: $(du -h "$TS" | cut -f1)"
+echo "recorded: $(basename "$TS") $(du -h "$TS" | cut -f1)"
 
-# ---- 4. shrink: lowest-bitrate codec this ffmpeg has, mono audio ------------
+# ---- 4. shrink: lowest-bitrate codec available, mono audio ----------------
 ENC=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
 if grep -q libsvtav1 <<<"$ENC"; then
   VOPTS=(-c:v libsvtav1 -b:v "$BITRATE" -svtav1-params "lp=${THREADS}")

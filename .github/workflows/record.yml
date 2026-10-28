@@ -31,4 +31,5 @@ jobs:
       - name: record, encode, publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NETTV_TOKEN: ${{ secrets.NETTV_TOKEN }}
         run: ./ci/record.sh
