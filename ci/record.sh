@@ -58,7 +58,9 @@ for base in live_hls/npl_match ottnpweb/npl_live; do
   esac
   for i in 1 2 3 4 5 6 7 8; do
     code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/$base$i/$file")
-    if [ "$code" = "200" ] && head -c 7 /tmp/npl-master.m3u8 | grep -q EXTM3U; then
+    # NB: compare without a pipe -- `head | grep -q` trips `set -o pipefail` via SIGPIPE
+    magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
+    if [ "$code" = "200" ] && [ "$magic" = "#EXTM3U" ]; then
       CH="$base$i"; break 2
     fi
   done
