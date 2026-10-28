@@ -83,7 +83,7 @@ if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl
 echo "variant: $VAR"
 
 # ---- 3. record until the feed goes quiet -----------------------------------
-node ci/capture.js \
+node ci/capture.cjs \
   --host "$EDGE" --path "/$CH" --variant "$VAR" \
   --out "$OUT" --name "${SLUG}_480p" --cb \
   --idle-stop 8 --max-hours 5
