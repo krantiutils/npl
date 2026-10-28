@@ -47,11 +47,11 @@ fi
 
 # ---- 2. find a channel that is publishing ----------------------------------
 # Two different layouts exist for the same league:
-#   /live_hls/npl_match_<n>/playlist.m3u8    match-day feed (seen on 28 Oct)
+#   /live_hls/npl_match_<n>/playlist.m3u8    match-day feed (UNDERSCORE: npl_match_3)
 #   /ottnpweb/npl_live<n>/index.m3u8         channel feed (seen on 27 Oct)
 # Probe both, anonymously -- neither needs a token.
 CH=""
-for base in live_hls/npl_match ottnpweb/npl_live; do
+for base in live_hls/npl_match_ ottnpweb/npl_live; do
   case "$base" in
     live_hls/*) file=playlist.m3u8 ;;
     *)          file=index.m3u8 ;;
