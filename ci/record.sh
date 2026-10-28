@@ -38,18 +38,43 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
   } catch (e) {}
 });')
 
-if [ -z "$live" ]; then echo "no live match"; exit 0; fi
-IFS='|' read -r KEY SLUG START <<<"$live"
-echo "live: $SLUG ($KEY)"
+if [ -n "$live" ]; then
+  IFS='|' read -r KEY SLUG START <<<"$live"
+  echo "live: $SLUG ($KEY)"
+else
+  echo "fixtures: no match marked live yet"
+fi
 
 # ---- 2. find a channel that is publishing ----------------------------------
+# Two different layouts exist for the same league:
+#   /live_hls/npl_match_<n>/playlist.m3u8    match-day feed (seen on 28 Oct)
+#   /ottnpweb/npl_live<n>/index.m3u8         channel feed (seen on 27 Oct)
+# Probe both, anonymously -- neither needs a token.
 CH=""
-for i in 1 2 3 4 5 6 7 8; do
-  code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/ottnpweb/npl_live$i/index.m3u8")
-  if [ "$code" = "200" ] && head -c 7 /tmp/npl-master.m3u8 | grep -q EXTM3U; then CH="npl_live$i"; break; fi
+for base in live_hls/npl_match ottnpweb/npl_live; do
+  case "$base" in
+    live_hls/*) file=playlist.m3u8 ;;
+    *)          file=index.m3u8 ;;
+  esac
+  for i in 1 2 3 4 5 6 7 8; do
+    code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/$base$i/$file")
+    if [ "$code" = "200" ] && head -c 7 /tmp/npl-master.m3u8 | grep -q EXTM3U; then
+      CH="$base$i"; break 2
+    fi
+  done
 done
+
+# nothing live by either signal -> nothing to do
+if [ -z "$live" ] && [ -z "$CH" ]; then echo "no live match and no publishing channel"; exit 0; fi
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
+
+# if the fixtures endpoint is lagging (toss, pre-show) we still record, with a generic name
+if [ -z "$live" ]; then
+  KEY="unknown"
+  SLUG="match-$(date -u +%Y%m%d-%H%M)"
+  START=$(date +%s)
+fi
 
 VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r')
 if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r'); fi
@@ -57,7 +82,7 @@ echo "variant: $VAR"
 
 # ---- 3. record until the feed goes quiet -----------------------------------
 node ci/capture.js \
-  --host "$EDGE" --path "/ottnpweb/$CH" --variant "$VAR" \
+  --host "$EDGE" --path "/$CH" --variant "$VAR" \
   --out "$OUT" --name "${SLUG}_480p" --cb \
   --idle-stop 8 --max-hours 5
 
