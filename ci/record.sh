@@ -40,7 +40,15 @@ let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   try {
     const j = JSON.parse(s);
-    const m = (j.data || []).find((x) => x.is_live || x.status === "started");
+    const rows = j.data || [];
+    let m = rows.find((x) => x.is_live || x.status === "started");
+    if (!m) {
+      // fixtures lag the feed (stayed not_started through 28 Oct). Fall back to the
+      // nearest scheduled match so the minted path is still authoritative.
+      const now = Date.now() / 1000;
+      m = rows.filter((x) => x.status === "not_started" && Math.abs(x.start_at - now) <= 3 * 3600)
+              .sort((a, b) => Math.abs(a.start_at - now) - Math.abs(b.start_at - now))[0];
+    }
     if (!m) return;
     const slug = `${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}`;
     process.stdout.write(`${m.key}|${slug}|${m.start_at}`);
