@@ -22,6 +22,10 @@ command -v ffmpeg >/dev/null || { echo "ffmpeg not on PATH"; exit 1; }
 API=https://ott-resources.geniustv.geniussystems.com.np/public/sports/v1/namespaces/-/tournaments
 EDGE=https://ottnlive-fstream.nettvstreamz.com
 OUT=${OUT:-$HOME/npl-ci/out}
+REPO=${REPO:-krantiutils/npl}
+# SMOKE=1 records ~75s instead of a whole match, so the publish path can be proven
+SMOKE=${SMOKE:-0}
+if [ "$SMOKE" = "1" ]; then MAXH=0.021; else MAXH=5; fi
 BITRATE=${BITRATE:-300k}
 THREADS=${THREADS:-4}
 mkdir -p "$OUT"
@@ -124,7 +128,7 @@ node ci/capture.cjs \
   --host "$EDGE" --path "/$CH" --variant "$VAR" \
   ${TOKENQS:+--token "$TOKENQS"} \
   --out "$OUT" --name "${SLUG}_480p" --cb \
-  --idle-stop 8 --max-hours 5
+  --idle-stop 8 --max-hours "$MAXH"
 
 TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
 if [ -z "$TS" ]; then echo "nothing recorded"; exit 1; fi
@@ -148,9 +152,9 @@ ffmpeg -hide_banner -loglevel error -y -i "$TS" \
 echo "encoded: $(du -h "$OUTV" | cut -f1)"
 
 # ---- 5. publish as a release asset ----------------------------------------
-TAG="npl-$(date -u -d "@${START:-$(date +%s)}" +%Y%m%d)-$(echo "$KEY" | tail -c 7)"
+if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-$(date -u -d "@${START:-$(date +%s)}" +%Y%m%d)-$(echo "$KEY" | tail -c 7)"; fi
 TITLE="NPL ${SLUG} — $(date -u -d "@${START:-$(date +%s)}" +%d\ %b\ %Y)"
-gh release create "$TAG" "$OUTV" --title "$TITLE" \
+gh release create "$TAG" -R "$REPO" "$OUTV" --title "$TITLE" \
   --notes "Auto-recorded from the live feed. ${BITRATE} video, mono audio." --latest 2>&1 | tail -2
 
 # ---- 6. reclaim disk (the release asset is the archive now) ---------------
