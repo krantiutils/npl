@@ -59,6 +59,15 @@ done
 
 [ -z "$publishing" ] && exit 0
 
+
+# Hard stop: once a recording for today has been published, never dispatch again
+# today. The fixtures API lags so badly (still "started" hours after the match)
+# that the signals above would otherwise keep firing for the rest of the evening.
+today="npl-$(date -u +%Y%m%d)-"
+if gh release list --repo "$REPO" --limit 30 2>/dev/null | grep -q "$today"; then
+  exit 0
+fi
+
 # don't stack runs (the workflow also has a concurrency group)
 state=$(gh run list --repo "$REPO" --workflow=record.yml --limit 1 --json status -q '.[0].status' 2>/dev/null || echo "")
 case "$state" in
