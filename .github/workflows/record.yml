@@ -3,12 +3,13 @@ name: record
 # Records the live NPL match on the self-hosted runner (Nepali IP), shrinks it
 # to AV1 480p and attaches it to a release.
 #
-# Deliberately triggered only by schedule / manual / repository_dispatch.
+# Deliberately triggered only by launchd dispatch / manual. Never `schedule`.
 # Do NOT add pull_request here: this runs on a self-hosted runner in a public
 # repo, and a fork PR would otherwise execute code on the host.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  # no schedule: GitHub cron queued duplicate runs behind long jobs and was
+  # never punctual (0 scheduled runs fired in the first 26 min). launchd on k2
+  # dispatches via workflow_dispatch instead.
   workflow_dispatch:
   repository_dispatch:
     types: [match-live]
