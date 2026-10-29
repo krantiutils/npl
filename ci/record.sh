@@ -164,7 +164,7 @@ ffmpeg -hide_banner -loglevel error -y -i "$TS" \
 echo "encoded: $(du -h "$OUTV" | cut -f1)"
 
 # ---- 5. publish as a release asset ----------------------------------------
-STAMP=$(basename "${TS%.ts}" | sed -E "s/.*_([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2})-([0-9]{2})-([0-9]{2})$//")
+STAMP=$(basename "${TS%.ts}" | sed -E 's/.*_([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2})-([0-9]{2})-([0-9]{2})$/\1T\2\3\4/')
 if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-${STAMP:-$(fmt_date "${START:-$(date +%s)}" %Y%m%d-%H%M)}"; fi
 TITLE="NPL ${SLUG} — $(fmt_date "${START:-$(date +%s)}" "%d %b %Y")"
 if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
