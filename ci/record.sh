@@ -164,10 +164,15 @@ ffmpeg -hide_banner -loglevel error -y -i "$TS" \
 echo "encoded: $(du -h "$OUTV" | cut -f1)"
 
 # ---- 5. publish as a release asset ----------------------------------------
-if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-$(fmt_date "${START:-$(date +%s)}" %Y%m%d)-$(echo "$KEY" | tail -c 7)"; fi
+STAMP=$(basename "${TS%.ts}" | sed -E "s/.*_([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2})-([0-9]{2})-([0-9]{2})$//")
+if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-${STAMP:-$(fmt_date "${START:-$(date +%s)}" %Y%m%d-%H%M)}"; fi
 TITLE="NPL ${SLUG} — $(fmt_date "${START:-$(date +%s)}" "%d %b %Y")"
+if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+  gh release upload "$TAG" -R "$REPO" "$OUTV" --clobber 2>&1 | tail -2
+else
 gh release create "$TAG" -R "$REPO" "$OUTV" --title "$TITLE" \
   --notes "Auto-recorded from the live feed. ${BITRATE} video, mono audio." --latest 2>&1 | tail -2
+fi
 
 # ---- 6. reclaim disk (the release asset is the archive now) ---------------
 rm -f "$TS" "$OUTV"
