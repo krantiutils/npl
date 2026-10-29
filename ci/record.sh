@@ -135,12 +135,39 @@ VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r'
 if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r'); fi
 echo "variant: $VAR"
 
-# ---- 3. record until the feed goes quiet ----------------------------------
+# ---- 3. record until the feed goes quiet -----------------------------------
+# The feed keeps streaming after the match (post-match show), so silence alone
+# means recording filler until the 5 h cap. This watchdog polls the fixtures API
+# and stops the capture once the match is marked completed. Backgrounded; if the
+# API lags it simply never fires and idle-stop/max-hours still apply.
+if [ -n "${KEY:-}" ] && [ "$KEY" != "unknown" ]; then
+  (
+    for _ in $(seq 1 360); do
+      sleep 60
+      st=$(curl -sS --max-time 10 "$API/fixtures" 2>/dev/null | KEY="$KEY" node -e '
+        let s = "";
+        process.stdin.on("data", (d) => (s += d)).on("end", () => {
+          try {
+            const m = (JSON.parse(s).data || []).find((x) => x.key === process.env.KEY);
+            if (m) process.stdout.write(m.status || "");
+          } catch (e) {}
+        });')
+      if [ "$st" = "completed" ]; then
+        echo "watchdog: match completed -> stopping capture"
+        pkill -TERM -f "capture.cjs" && break
+      fi
+    done
+  ) &
+  WD=$!
+fi
+
 node ci/capture.cjs \
   --host "$EDGE" --path "/$CH" --variant "$VAR" \
   ${TOKENQS:+--token "$TOKENQS"} \
   --out "$OUT" --name "${SLUG}_480p" --cb \
   --idle-stop 8 --max-hours "$MAXH"
+
+kill "${WD:-}" 2>/dev/null || true
 
 TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
 if [ -z "$TS" ]; then echo "nothing recorded"; exit 1; fi

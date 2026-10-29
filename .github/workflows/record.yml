@@ -24,7 +24,7 @@ permissions:
 jobs:
   record:
     runs-on: [self-hosted, npl]
-    timeout-minutes: 360
+    timeout-minutes: 600
     steps:
       - uses: actions/checkout@v4
 
