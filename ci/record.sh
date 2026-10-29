@@ -30,6 +30,10 @@ BITRATE=${BITRATE:-300k}
 THREADS=${THREADS:-4}
 mkdir -p "$OUT"
 
+# BSD date (macOS) has no -d; GNU date has no -r. Try both.
+fmt_date() { date -u -r "$1" "+$2" 2>/dev/null || date -u -d "@$1" "+$2"; }
+
+
 # ---- 1. is a match live? (public endpoint) --------------------------------
 live=$(curl -sS --max-time 20 "$API/fixtures" | node -e '
 let s = "";
@@ -152,8 +156,8 @@ ffmpeg -hide_banner -loglevel error -y -i "$TS" \
 echo "encoded: $(du -h "$OUTV" | cut -f1)"
 
 # ---- 5. publish as a release asset ----------------------------------------
-if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-$(date -u -d "@${START:-$(date +%s)}" +%Y%m%d)-$(echo "$KEY" | tail -c 7)"; fi
-TITLE="NPL ${SLUG} — $(date -u -d "@${START:-$(date +%s)}" +%d\ %b\ %Y)"
+if [ "$SMOKE" = "1" ]; then TAG="smoke-$(date -u +%H%M%S)"; else TAG="npl-$(fmt_date "${START:-$(date +%s)}" %Y%m%d)-$(echo "$KEY" | tail -c 7)"; fi
+TITLE="NPL ${SLUG} — $(fmt_date "${START:-$(date +%s)}" "%d %b %Y")"
 gh release create "$TAG" -R "$REPO" "$OUTV" --title "$TITLE" \
   --notes "Auto-recorded from the live feed. ${BITRATE} video, mono audio." --latest 2>&1 | tail -2
 
