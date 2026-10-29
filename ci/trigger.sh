@@ -22,21 +22,26 @@ command -v gh >/dev/null || { echo "gh missing on PATH ($PATH)"; exit 1; }
 
 fixtures=$(curl -sS --max-time 15 "$API/fixtures" 2>/dev/null)
 
-# "live" or "starting soon" -> worth probing the channels
+# "live" or "starting soon" -> worth probing the channels.
+# Emits the match slug (e.g. KNY-vs-BK) so the guard below can be per-match:
+# NPL runs two games a day and the day-wide guard would swallow the second one.
 interest=$(printf '%s' "$fixtures" | WINDOW_MIN="$WINDOW_MIN" node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   try {
-    const win = Number(process.env.WINDOW_MIN || 75) * 60000;
+    const win = Number(process.env.WINDOW_MIN || 45) * 60000;
     const now = Date.now();
     const rows = JSON.parse(s).data || [];
-    const hot = rows.some((m) => {
+    const hot = rows.filter((m) => {
       if (m.is_live || m.status === "started") return true;
       if (m.status !== "not_started") return false;
       const start = Number(m.start_at) * 1000;
       return Number.isFinite(start) && Math.abs(now - start) <= win;
     });
-    if (hot) process.stdout.write("1");
+    if (hot.length) {
+      const m = hot[0];
+      process.stdout.write(`${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}`);
+    }
   } catch (e) {}
 });')
 
@@ -60,11 +65,9 @@ done
 [ -z "$publishing" ] && exit 0
 
 
-# Hard stop: once a recording for today has been published, never dispatch again
-# today. The fixtures API lags so badly (still "started" hours after the match)
-# that the signals above would otherwise keep firing for the rest of the evening.
-today="npl-$(date -u +%Y%m%d)-"
-if gh release list --repo "$REPO" --limit 30 2>/dev/null | grep -q "$today"; then
+# Already published this match? Then stop. Matched on the release *title*, because
+# NPL runs two games per day and a day-wide guard would skip the second one.
+if gh release list --repo "$REPO" --limit 30 2>/dev/null | grep -q "$interest"; then
   exit 0
 fi
 
