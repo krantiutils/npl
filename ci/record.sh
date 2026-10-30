@@ -34,6 +34,29 @@ mkdir -p "$OUT"
 fmt_date() { date -u -r "$1" "+$2" 2>/dev/null || date -u -d "@$1" "+$2"; }
 
 
+# ---- token: cached on the runner, re-minted only when expired --------------
+# The account allows a single concurrent session, so logging in on every run
+# would fight the user's own device. The token lasts ~46 h; we only refresh it
+# when it is missing or within 15 minutes of expiry.
+TOKEN_FILE=${TOKEN_FILE:-$HOME/npl-ci/token.txt}
+token_valid() {
+  [ -f "$TOKEN_FILE" ] || return 1
+  node -e '
+    const t = require("fs").readFileSync(process.argv[1], "utf8").trim();
+    const p = JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString());
+    process.exit(p.exp * 1000 > Date.now() + 15 * 60000 ? 0 : 1);
+  ' "$TOKEN_FILE" 2>/dev/null
+}
+if ! token_valid; then
+  if [ -n "${NETTV_USER:-}" ] && [ -n "${NETTV_PASS:-}" ]; then
+    ./ci/login.sh || echo "login failed -- continuing without a token (anonymous probing)"
+  else
+    echo "no cached token and no credentials -- continuing anonymously"
+  fi
+fi
+if [ -z "${NETTV_TOKEN:-}" ] && [ -f "$TOKEN_FILE" ]; then NETTV_TOKEN=$(cat "$TOKEN_FILE"); fi
+export NETTV_TOKEN
+
 # ---- 1. is a match live? (public endpoint) --------------------------------
 live=$(curl -sS --max-time 20 "$API/fixtures" | node -e '
 let s = "";
