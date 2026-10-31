@@ -1,5 +1,6 @@
 {
-  "checked": "2026-10-31T08:31:10Z",
+  "checked": "2026-10-31T11:55:41Z",
   "live": true,
-  "path": "/live_hls/npl_match_3"
+  "path": "/npl/live_match6/playlist.m3u8",
+  "url": "https://lb-ottnp.nettvstreamz.com/npl/live_match6/playlist.m3u8?wmsAuthSign=c2VydmVyX3RpbWU9MTAvMzEvMjAyNiAxMTo1NTo0MSBBTSZoYXNoX3ZhbHVlPWRLbExDMHlvdjJBZFBWS1F6YXM3Nnc9PSZ2YWxpZG1pbnV0ZXM9NjAmaWQ9ZXlKMGVYQWlPaUpLVjFRaUxDSmhiR2NpT2lKU1V6STFOaUo5LmV5SmxlSEFpT2pFM09UTTFNRGcyTWpBc0luTjFZbk5qY21saVpYSmZhV1FpT2lJNU16TTNOekE1SWl3aWMzUmlJam9pZG05cFpHRnphQzAxSW4wLkVaQnpoZ282YWthbmdNd0RJamk4NjctRklyVVRuT2hhbUwwSlVXZzBvMU0="
 }

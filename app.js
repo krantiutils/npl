@@ -148,7 +148,9 @@ async function refresh() {
 
     if (live.length) {
       const hint = await fetchLiveHint();
-      const channel = hint ? { url: EDGE + hint.path, path: hint.path } : await findLiveChannel();
+      // the CDN now requires the signed URL, so prefer the absolute one CI publishes
+      const channel = hint ? { url: hint.url || EDGE + hint.path, path: hint.path }
+                           : await findLiveChannel();
       renderLive(live[0], channel);
     } else {
       renderIdle(next);
