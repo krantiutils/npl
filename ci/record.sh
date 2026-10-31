@@ -89,7 +89,7 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
     const slug = `${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}`;
     process.stdout.write(`${m.key}|${slug}|${m.start_at}`);
   } catch (e) {}
-});')
+});'
 fi)
 
 if [ -n "$live" ]; then
@@ -117,7 +117,7 @@ if [ -n "${NETTV_TOKEN:-}" ] && [ -n "$live" ]; then
       HOST=$(printf '%s' "$final" | cut -d/ -f3)
       PB=$(printf '%s' "$final" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##')
       QS=$(printf '%s' "$SU" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
-      CH="${PB#/}"; EDGE_HOST="https://$HOST"; TOKENQS="$QS"
+      CH="${PB#/}"; EDGE_HOST="https://$HOST"; TOKENQS="$QS"; LIVE_URL="$SU"
       echo "minted channel: $EDGE_HOST/$CH"
     else
       echo "minted url did not serve a playlist (HTTP $code), falling back to probing"
@@ -149,9 +149,11 @@ echo "channel: $CH"
 # the channel is served anonymously, so the page only needs the path.
 live_json() {
   node -e '
-    const [path, checked, live] = process.argv.slice(1);
-    process.stdout.write(JSON.stringify({ checked, live: live === "1", path: live === "1" ? path : null }, null, 2) + "\n");
-  ' "/$CH" "$(date -u +%FT%TZ)" "$([ -n "$CH" ] && echo 1 || echo 0)"
+    const [path, checked, live, url] = process.argv.slice(1);
+    const on = live === "1";
+    process.stdout.write(JSON.stringify(
+      { checked, live: on, path: on ? path : null, ...(on && url ? { url } : {}) }, null, 2) + "\n");
+  ' "/$CH" "$(date -u +%FT%TZ)" "$([ -n "$CH" ] && echo 1 || echo 0)" "${LIVE_URL:-}"
 }
 if [ "$(cat live.json 2>/dev/null || true)" != "$(live_json)" ]; then
   live_json > live.json
