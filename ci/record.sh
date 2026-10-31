@@ -58,7 +58,20 @@ if [ -z "${NETTV_TOKEN:-}" ] && [ -f "$TOKEN_FILE" ]; then NETTV_TOKEN=$(cat "$T
 export NETTV_TOKEN
 
 # ---- 1. is a match live? (public endpoint) --------------------------------
-live=$(curl -sS --max-time 20 "$API/fixtures" | node -e '
+# the trigger resolves the match and passes its key; fall back to the live fixture
+live=$(if [ -n "${MATCH_KEY:-}" ]; then
+  curl -sS --max-time 20 "$API/fixtures" | MATCH_KEY="$MATCH_KEY" node -e '
+let s = "";
+process.stdin.on("data", (d) => (s += d)).on("end", () => {
+  try {
+    const want = process.env.MATCH_KEY;
+    const m = (JSON.parse(s).data || []).find((x) => x.key === want);
+    const slug = m ? `${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}` : "live";
+    process.stdout.write(`${want}|${slug}|${m ? m.start_at : 0}`);
+  } catch (e) {}
+});'
+else
+  curl -sS --max-time 20 "$API/fixtures" | node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   try {
@@ -77,6 +90,7 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
     process.stdout.write(`${m.key}|${slug}|${m.start_at}`);
   } catch (e) {}
 });')
+fi)
 
 if [ -n "$live" ]; then
   IFS='|' read -r KEY SLUG START <<<"$live"
@@ -94,14 +108,17 @@ if [ -n "${NETTV_TOKEN:-}" ] && [ -n "$live" ]; then
         "https://ott-resources.geniustv.geniussystems.com.np/subscriber/sports/v1/namespaces/5/subscribers/${NETTV_SUBSCRIBER:-9337709}/stbs/${NETTV_STB:-voidash-5}/cricket/matches/$KEY/stream-url" \
        | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).data.stream_url||"")}catch(e){}})')
   if [ -n "$SU" ]; then
-    PB=$(printf '%s' "$SU" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##; s#^/#+#')
-    FN=$(printf '%s' "$SU" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#.*/##')
-    QS=$(printf '%s' "$SU" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
-    code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 8 "$EDGE/$PB/$FN?$QS")
+    # Follow the LB redirect first: the real rendition is not on the pinned edge, the
+    # host rotates (ott-anycaststream NN) and the filename is not always index.m3u8
+    # (it has been playlist.m3u8). Trust the final URL rather than guessing.
+    read -r code final <<<"$(curl -sSL -o /tmp/npl-master.m3u8 -w '%{http_code} %{url_effective}' --max-time 12 "$SU")"
     magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
     if [ "$magic" = "#EXTM3U" ]; then
-      CH="$PB"; TOKENQS="$QS"
-      echo "minted channel: $CH"
+      HOST=$(printf '%s' "$final" | cut -d/ -f3)
+      PB=$(printf '%s' "$final" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##')
+      QS=$(printf '%s' "$SU" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
+      CH="${PB#/}"; EDGE_HOST="https://$HOST"; TOKENQS="$QS"
+      echo "minted channel: $EDGE_HOST/$CH"
     else
       echo "minted url did not serve a playlist (HTTP $code), falling back to probing"
     fi

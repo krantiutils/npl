@@ -11,6 +11,11 @@ on:
   # never punctual (0 scheduled runs fired in the first 26 min). launchd on k2
   # dispatches via workflow_dispatch instead.
   workflow_dispatch:
+    inputs:
+      match:
+        description: 'match key (the trigger mints and passes it)'
+        required: false
+        default: ''
   repository_dispatch:
     types: [match-live]
 
@@ -32,6 +37,7 @@ jobs:
       - name: record, encode, publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATCH_KEY: ${{ github.event.inputs.match }}
           NETTV_USER: ${{ secrets.NETTV_USER }}
           NETTV_PASS: ${{ secrets.NETTV_PASS }}
         run: ./ci/record.sh
