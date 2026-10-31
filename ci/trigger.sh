@@ -30,7 +30,16 @@ let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   try {
     const rows = JSON.parse(s).data || [];
-    const m = rows.find((x) => x.is_live || x.status === "started");
+    let m = rows.find((x) => x.is_live || x.status === "started");
+    if (!m) {
+      // The platform flag lags (it never went live for the 31 Oct 17:00 game). If a
+      // a fixture start time has passed and it is still not_started, that is a match
+      // that should be on air -- let the mint below decide whether a feed exists.
+      const now = Date.now() / 1000;
+      m = rows.filter((x) => x.status === "not_started" && x.start_at <= now + 300 &&
+                               now - x.start_at <= 3 * 3600)
+              .sort((a, b) => b.start_at - a.start_at)[0];
+    }
     if (!m) return;
     const slug = `${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}`;
     process.stdout.write(`${m.key}|${slug}`);

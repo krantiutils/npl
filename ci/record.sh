@@ -99,34 +99,42 @@ else
   echo "fixtures: no match marked live yet"
 fi
 
-# ---- 2a. authoritative path via the minted stream_url ---------------------
+# ---- 2. resolve the live feed ----------------------------------------------
+# Since 31 Oct the CDN requires a signed URL, and that token lives 60 minutes. So
+# resolving is not a once-per-run step: it has to be redone during the match, or a
+# long game truncates at the hour mark. mint_feed() runs before every capture round
+# and the rounds append to one file via --resume.
 CH=""
 TOKENQS=""
-if [ -n "${NETTV_TOKEN:-}" ] && [ -n "$live" ]; then
-  SU=$(curl -sS --max-time 12 \
+EDGE_HOST=""
+LIVE_URL=""
+ROUND_SECONDS=${ROUND_SECONDS:-2400}                     # re-mint at least this often
+MAX_SECONDS=$(( $(printf '%s' "$MAXH" | awk '{printf "%d", $1 * 3600}') ))
+
+mint_feed() {
+  CH=""; TOKENQS=""; EDGE_HOST=""; LIVE_URL=""
+  [ -n "${NETTV_TOKEN:-}" ] || return 1
+  [ -n "${KEY:-}" ] && [ "$KEY" != "unknown" ] || return 1
+  local su code final magic host pb qs
+  su=$(curl -sS --max-time 12 \
         -H "Authorization: Bearer $NETTV_TOKEN" -H "Accept: application/json" \
         "https://ott-resources.geniustv.geniussystems.com.np/subscriber/sports/v1/namespaces/5/subscribers/${NETTV_SUBSCRIBER:-9337709}/stbs/${NETTV_STB:-voidash-5}/cricket/matches/$KEY/stream-url" \
        | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).data.stream_url||"")}catch(e){}})')
-  if [ -n "$SU" ]; then
-    # Follow the LB redirect first: the real rendition is not on the pinned edge, the
-    # host rotates (ott-anycaststream NN) and the filename is not always index.m3u8
-    # (it has been playlist.m3u8). Trust the final URL rather than guessing.
-    read -r code final <<<"$(curl -sSL -o /tmp/npl-master.m3u8 -w '%{http_code} %{url_effective}' --max-time 12 "$SU")"
-    magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
-    if [ "$magic" = "#EXTM3U" ]; then
-      HOST=$(printf '%s' "$final" | cut -d/ -f3)
-      PB=$(printf '%s' "$final" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##')
-      QS=$(printf '%s' "$SU" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
-      CH="${PB#/}"; EDGE_HOST="https://$HOST"; TOKENQS="$QS"; LIVE_URL="$SU"
-      echo "minted channel: $EDGE_HOST/$CH"
-    else
-      echo "minted url did not serve a playlist (HTTP $code), falling back to probing"
-    fi
-  fi
-fi
+  [ -n "$su" ] || return 1
+  # Follow the LB redirect: the real rendition is not on the pinned edge, the host
+  # rotates (ott-anycaststream NN) and the filename is not always index.m3u8.
+  read -r code final <<<"$(curl -sSL -o /tmp/npl-master.m3u8 -w '%{http_code} %{url_effective}' --max-time 12 "$su")"
+  magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
+  [ "$magic" = "#EXTM3U" ] || return 1
+  host=$(printf '%s' "$final" | cut -d/ -f3)
+  pb=$(printf '%s' "$final" | sed -E 's#^https?://[^/]+##; s#\?.*$##; s#/[^/]+$##')
+  qs=$(printf '%s' "$su" | sed -n 's/.*\(wmsAuthSign=.*\)/\1/p')
+  CH="${pb#/}"; EDGE_HOST="https://$host"; TOKENQS="$qs"; LIVE_URL="$su"
+  echo "minted: $EDGE_HOST/$CH"
+}
 
-# ---- 2b. anonymous fallback: probe both known layouts ---------------------
-if [ -z "$CH" ]; then
+probe_feed() {
+  local base file i code magic
   for base in live_hls/npl_match_ ottnpweb/npl_live; do
     case "$base" in
       live_hls/*) file=playlist.m3u8 ;;
@@ -136,17 +144,28 @@ if [ -z "$CH" ]; then
       code=$(curl -s -o /tmp/npl-master.m3u8 -w '%{http_code}' --max-time 6 "$EDGE/$base$i/$file")
       # NB: no pipe here -- `head | grep -q` trips pipefail via SIGPIPE
       magic=$(head -c 7 /tmp/npl-master.m3u8 2>/dev/null || true)
-      if [ "$code" = "200" ] && [ "$magic" = "#EXTM3U" ]; then CH="$base$i"; break 2; fi
+      if [ "$code" = "200" ] && [ "$magic" = "#EXTM3U" ]; then CH="$base$i"; return 0; fi
     done
   done
-fi
+  return 1
+}
+
+pick_variant() {
+  VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r')
+  if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then
+    VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r')
+  fi
+  echo "variant: $VAR"
+}
+
+mint_feed || probe_feed || true
 
 if [ -z "$live" ] && [ -z "$CH" ]; then echo "no live match and no publishing channel"; exit 0; fi
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
+pick_variant
 
-# publish the resolved path for the website (public repo -> Pages). No token here:
-# the channel is served anonymously, so the page only needs the path.
+# publish the resolved url for the website (it plays hint.url directly)
 live_json() {
   node -e '
     const [path, checked, live, url] = process.argv.slice(1);
@@ -173,47 +192,56 @@ if [ -z "$live" ]; then
   START=$(date +%s)
 fi
 
-VAR=$(grep -A1 'RESOLUTION=854x480' /tmp/npl-master.m3u8 | tail -1 | tr -d ' \r')
-if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r'); fi
-echo "variant: $VAR"
+# ---- 3. record, re-minting as the token expires ----------------------------
+STARTED=$(date +%s)
+TS=""
+ROUND=0
+while :; do
+  ROUND=$((ROUND + 1))
 
-# ---- 3. record until the feed goes quiet -----------------------------------
-# The feed keeps streaming after the match (post-match show), so silence alone
-# means recording filler until the 5 h cap. This watchdog polls the fixtures API
-# and stops the capture once the match is marked completed. Backgrounded; if the
-# API lags it simply never fires and idle-stop/max-hours still apply.
-if [ -n "${KEY:-}" ] && [ "$KEY" != "unknown" ]; then
-  (
-    for _ in $(seq 1 360); do
-      sleep 60
-      st=$(curl -sS --max-time 10 "$API/fixtures" 2>/dev/null | KEY="$KEY" node -e '
-        let s = "";
-        process.stdin.on("data", (d) => (s += d)).on("end", () => {
-          try {
-            const m = (JSON.parse(s).data || []).find((x) => x.key === process.env.KEY);
-            if (m) process.stdout.write(m.status || "");
-          } catch (e) {}
-        });')
-      if [ "$st" = "completed" ]; then
-        echo "watchdog: match completed -> stopping capture"
-        pkill -TERM -f "capture.cjs" && break
-      fi
-    done
-  ) &
-  WD=$!
-fi
+  if [ "$ROUND" -gt 1 ]; then
+    mint_feed || true
+    if [ -n "$CH" ]; then pick_variant; else
+      echo "round $ROUND: cannot re-mint, keeping the last channel"
+    fi
+  fi
 
-node ci/capture.cjs \
-  --host "$EDGE" --path "/$CH" --variant "$VAR" \
-  ${TOKENQS:+--token "$TOKENQS"} \
-  --out "$OUT" --name "${SLUG}_480p" --cb \
-  --idle-stop 8 --max-hours "$MAXH"
+  args=(--host "${EDGE_HOST:-$EDGE}" --path "/$CH" --variant "$VAR"
+        --out "$OUT" --name "${SLUG}_480p" --cb --idle-stop 8 --max-hours 0.7)
+  [ -n "$TOKENQS" ] && args+=(--token "$TOKENQS")
+  [ -n "$TS" ] && args+=(--resume "$TS")
 
-kill "${WD:-}" 2>/dev/null || true
+  echo "round $ROUND: recording into ${TS:-a new file}"
+  timeout $((ROUND_SECONDS + 300)) node ci/capture.cjs "${args[@]}" || true
 
-TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
-if [ -z "$TS" ]; then echo "nothing recorded"; exit 1; fi
+  TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
+  elapsed=$(( $(date +%s) - STARTED ))
+
+  st=""
+  if [ -n "${KEY:-}" ] && [ "$KEY" != "unknown" ]; then
+    st=$(curl -sS --max-time 10 "$API/fixtures" 2>/dev/null | KEY="$KEY" node -e '
+      let s = "";
+      process.stdin.on("data", (d) => (s += d)).on("end", () => {
+        try {
+          const m = (JSON.parse(s).data || []).find((x) => x.key === process.env.KEY);
+          if (m) process.stdout.write(m.status || "");
+        } catch (e) {}
+      });')
+  fi
+  [ "$st" = "completed" ] && { echo "match completed"; break; }
+  [ "$MAX_SECONDS" -gt 0 ] && [ "$elapsed" -ge "$MAX_SECONDS" ] && { echo "time cap reached"; break; }
+  [ "$elapsed" -ge 300 ] && [ "${SMOKE:-0}" = "1" ] && { echo "smoke limit reached"; break; }
+  sleep 10
+done
+
+if [ -z "$TS" ]; then echo "FAIL: nothing recorded for $SLUG"; exit 1; fi
+SIZE=$(wc -c < "$TS" | tr -d ' ')
 echo "recorded: $(basename "$TS") $(du -h "$TS" | cut -f1)"
+# A green run that captured almost nothing is worse than a red one: fail loudly.
+if [ "$SIZE" -lt 5000000 ]; then
+  echo "FAIL: only $SIZE bytes for $SLUG -- feed or token failed, not a match recording"
+  exit 1
+fi
 
 # ---- 4. shrink: lowest-bitrate codec available, mono audio ----------------
 ENC=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
