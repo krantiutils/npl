@@ -163,6 +163,25 @@ mint_feed || probe_feed || true
 if [ -z "$live" ] && [ -z "$CH" ]; then echo "no live match and no publishing channel"; exit 0; fi
 if [ -z "$CH" ]; then echo "match is live but no channel is publishing"; exit 1; fi
 echo "channel: $CH"
+
+# Only record inside the match window. The mint happily hands back the *previous*
+# channel for a future fixture (it did at 01:25 for a 17:00 match), so without this
+# we would publish live:true and record sixteen hours of last night's feed.
+if [ -n "${KEY:-}" ] && [ "$KEY" != "unknown" ] && [ -n "${START:-}" ]; then
+  now=$(date +%s)
+  case "$START" in ''|*[!0-9]*) START=0 ;; esac
+  if [ "$START" -gt 0 ]; then
+    if [ "$now" -lt $((START - 1800)) ]; then
+      echo "match starts in $(( (START - now) / 60 )) min -- not recording yet"
+      exit 0
+    fi
+    if [ "$now" -gt $((START + 21600)) ]; then
+      echo "match window closed 6 h ago -- not recording"
+      exit 0
+    fi
+  fi
+fi
+
 pick_variant
 
 # publish the resolved url for the website (it plays hint.url directly)
