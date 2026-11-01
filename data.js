@@ -141,7 +141,9 @@ export function fmtTime(iso) {
  */
 export async function fetchLiveHint({ maxAgeMin = 20 } = {}) {
   try {
-    const res = await fetch('live.json', { cache: 'no-store' });
+    // GitHub Pages caches live.json for ~10 min; the query string busts the CDN,
+    // otherwise a match going live takes ten minutes to appear on the site.
+    const res = await fetch(`live.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const j = await res.json();
     if (!j || !j.live || typeof j.path !== 'string') return null;
