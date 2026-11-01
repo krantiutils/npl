@@ -155,6 +155,9 @@ pick_variant() {
   if [ -z "$VAR" ] || [ "${VAR:0:1}" = "#" ]; then
     VAR=$(grep -m1 -v '^#' /tmp/npl-master.m3u8 | tr -d ' \r')
   fi
+  # the playlist carries ?wmsAuthSign=... on every URI; capture appends the token
+  # itself (--token), so keep only the path here or the URL gets two '?'
+  VAR=$(printf '%s' "$VAR" | sed -E 's#\?.*$##')
   echo "variant: $VAR"
 }
 
@@ -231,7 +234,7 @@ while :; do
   [ -n "$TS" ] && args+=(--resume "$TS")
 
   echo "round $ROUND: recording into ${TS:-a new file}"
-  timeout $((ROUND_SECONDS + 300)) node ci/capture.cjs "${args[@]}" || true
+  node ci/capture.cjs "${args[@]}" || true
 
   TS=$(ls -t "$OUT"/${SLUG}_480p_*.ts 2>/dev/null | head -1 || true)
   elapsed=$(( $(date +%s) - STARTED ))

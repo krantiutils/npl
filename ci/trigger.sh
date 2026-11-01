@@ -19,7 +19,8 @@ command -v node >/dev/null || { echo "node missing"; exit 1; }
 command -v gh >/dev/null || { echo "gh missing"; exit 1; }
 
 # creds + token
-[ -f "$HOME/npl-ci/nettv.env" ] && . "$HOME/npl-ci/nettv.env"
+# set -a: the login body is built by node, which only sees *exported* variables
+if [ -f "$HOME/npl-ci/nettv.env" ]; then set -a; . "$HOME/npl-ci/nettv.env"; set +a; fi
 [ -f "$HOME/npl-ci/gh-token" ] && export GH_TOKEN=$(cat "$HOME/npl-ci/gh-token")
 [ -z "${NETTV_USER:-}" ] || [ -z "${NETTV_PASS:-}" ] && { echo "no nettv creds"; exit 0; }
 
