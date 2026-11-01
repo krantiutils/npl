@@ -196,6 +196,7 @@ live_json() {
       { checked, live: on, path: on ? path : null, ...(on && url ? { url } : {}) }, null, 2) + "\n");
   ' "/$CH" "$(date -u +%FT%TZ)" "$([ -n "$CH" ] && echo 1 || echo 0)" "${LIVE_URL:-}"
 }
+publish_live() {
 if [ "$(cat live.json 2>/dev/null || true)" != "$(live_json)" ]; then
   live_json > live.json
   git add live.json
@@ -206,6 +207,8 @@ if [ "$(cat live.json 2>/dev/null || true)" != "$(live_json)" ]; then
 else
   echo "live.json unchanged"
 fi
+}
+publish_live
 
 # fixtures can lag the feed (toss / pre-show): still record, with a generic name
 if [ -z "$live" ]; then
@@ -223,6 +226,7 @@ while :; do
 
   if [ "$ROUND" -gt 1 ]; then
     mint_feed || true
+    publish_live
     if [ -n "$CH" ]; then pick_variant; else
       echo "round $ROUND: cannot re-mint, keeping the last channel"
     fi

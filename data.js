@@ -139,7 +139,7 @@ export function fmtTime(iso) {
  * between matches: /live_hls/npl_match_3 one day, /ottnpweb/npl_live3 another).
  * Prefer that hint; fall back to probing when it is missing or stale.
  */
-export async function fetchLiveHint({ maxAgeMin = 20 } = {}) {
+export async function fetchLiveHint({ maxAgeMin = 200 } = {}) {
   try {
     // GitHub Pages caches live.json for ~10 min; the query string busts the CDN,
     // otherwise a match going live takes ten minutes to appear on the site.
