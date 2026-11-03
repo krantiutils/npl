@@ -53,9 +53,9 @@ Two consequences that shape the page:
    FairPlay. The page says so instead of rendering a black rectangle.
 
 A license cannot be renewed early: the API keeps returning the current one until
-it expires. So a viewer who starts inside that gap is served the expired license
-and is told to reload in a minute; a viewer already playing is unaffected, because
-the keys are already in the CDM.
+it expires, and for a while after that. So the minter rotates the session when
+the license goes stale (see below); a viewer already playing is unaffected,
+because the keys are already in the CDM.
 
 ```
 fixtures  -> is a match live?        /public/sports/v1/.../fixtures
@@ -66,20 +66,31 @@ standings -> /public/sports/v1/.../points
 
 Refreshes every 60 s.
 
-### Known limit: the license only rotates while the account has a device playing
+### How the license rotates
 
-The license is bound to the subscription's *active device session* (the API
-returns the current one even when you ask for `stbs/voidash-5`). In practice:
+The license is bound to the subscription's *active device session*, and the API
+hands back the current one even when you ask for another STB. It cannot be
+renewed early, and it is **not** renewed by asking again: after it dies the API
+keeps serving the dead one until a *new session* exists.
 
-* while a phone/TV on the same account is streaming, the platform issues a fresh
-  license every ~15 minutes and this page follows it;
-* once nothing on the account is playing, the API keeps returning the last
-  license, it expires, and the page sits on "waiting for a fresh license";
-* the account allows **one** session, so the minter cannot log in and hold its own
-  while another device is signed in (`POST /v2/subscribers/login` answers
-  *"Number of logged in sessions exceeded"*).
+A new session gets a new license, so `mintSession()` rotates itself: when the
+license on offer has expired it logs out (`GET v2/subscribers/logout` — POST is a
+404) and logs in again, which is worth a fresh fifteen minutes. The rotation is
+stamped in `~/npl-ci/last-rotate` so the publisher's short-lived process and the
+long-lived minter cannot both rotate in the same minute.
 
-If the page must work on its own, give the session to k2 — see below.
+What that costs: a viewer who opens the page with a license that has just expired
+waits up to a refresh (~60 s) before it plays. A viewer already playing is not
+affected — the keys are already in the CDM, and a rotation does not take them
+back.
+
+### The account allows one session
+
+One device at a time. A page that owns the session and an iPad that wants it
+cannot both hold it: whoever logs in last wins, and the other's token comes back
+`401 "Your session has been revoked"`. `mintSession()` treats a 401 as "log in
+again", so the account does not stay wedged — but it does mean the iPad and the
+page take turns.
 
 ### Holding the session on k2
 

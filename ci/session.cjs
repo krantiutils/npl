@@ -128,6 +128,35 @@ async function liveMatch() {
   return { key: m.key, slug: `${m.team_a?.code || '?'}-vs-${m.team_b?.code || '?'}`, name: m.name };
 }
 
+/**
+ * Free the account's single session.
+ *
+ * GET, not POST (the web app calls it the same way); POST answers 404.
+ */
+async function logout() {
+  let token = '';
+  try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { /* none */ }
+  if (!token) return false;
+  const res = await fetch(`${AUTH}/v2/subscribers/logout`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  log(`logout: ${res.status}`);
+  return res.ok;
+}
+
+/** A new session comes with a new license, which is the only way to rotate one. */
+async function rotateSession() {
+  try {
+    await logout();
+  } catch (e) {
+    // A revoked token cannot log out; the login below decides what happens next.
+    log('logout failed:', e.message);
+  }
+  return getToken({ force: true });
+}
+
 async function streamUrl(key, token) {
   const url = `${RES}/subscriber/sports/v1/namespaces/5/subscribers/${SUBSCRIBER}/stbs/${STB}/cricket/matches/${key}/stream-url`;
   const res = await fetch(url, {
@@ -144,7 +173,7 @@ async function streamUrl(key, token) {
  * used to sit on an expired license for an hour because the cached token still
  * had a valid `exp`. Re-authenticate once and retry.
  */
-async function mintSession(key) {
+async function requestSession(key) {
   let { status, text } = await streamUrl(key, await getToken());
   if (status === 401) {
     log('token rejected, logging in again');
@@ -163,6 +192,56 @@ async function mintSession(key) {
   };
 }
 
+// Don't hand out a license that dies under the player's feet.
+const LICENSE_SKEW_MS = Number(process.env.LICENSE_SKEW_MS || 90000);
+// One rotation per minute at most, so an upstream that keeps answering with a
+// stale license cannot turn into a login loop. The stamp lives in a file because
+// the publisher is a short-lived process: a in-memory guard would not stop it.
+const ROTATE_MIN_GAP_MS = Number(process.env.ROTATE_MIN_GAP_MS || 60000);
+const ROTATE_STAMP = process.env.ROTATE_STAMP || path.join(path.dirname(TOKEN_FILE), 'last-rotate');
+
+function rotatedRecently() {
+  try {
+    const t = Number(fs.readFileSync(ROTATE_STAMP, 'utf8'));
+    return Number.isFinite(t) && Date.now() - t < ROTATE_MIN_GAP_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markRotated() {
+  try {
+    fs.writeFileSync(ROTATE_STAMP, String(Date.now()), { mode: 0o600 });
+  } catch (e) {
+    log('could not record the rotation stamp:', e.message);
+  }
+}
+
+/**
+ * Manifest + license for one match, rotating the session when the license on
+ * offer has expired.
+ *
+ * The API keeps returning the *current* license until it dies, and for a while
+ * after that: a new one is only minted for a new session. (Watching the feed on a
+ * phone is what used to drive this -- every fifteen minutes the phone's session
+ * renewed and the API followed.) Owning the session means we can do it ourselves:
+ * log out, log in, and the next request gets fifteen fresh minutes.
+ */
+async function mintSession(key) {
+  const session = await requestSession(key);
+  const exp = Date.parse(session.expires || '');
+  if (Number.isFinite(exp) && exp > Date.now() + LICENSE_SKEW_MS) return session;
+
+  if (rotatedRecently()) {
+    log('license still stale, rotation throttled');
+    return session;
+  }
+  markRotated();
+  log(`license expires ${session.expires}, rotating the session`);
+  await rotateSession();
+  return requestSession(key);
+}
+
 /** Is the manifest really serving? (A mint can succeed for a feed that is not up.) */
 async function manifestServes(mpd) {
   try {
@@ -177,5 +256,5 @@ async function manifestServes(mpd) {
 
 module.exports = {
   TOKEN_FILE, RES, AUTH, SUBSCRIBER, STB,
-  getToken, liveMatch, mintSession, manifestServes, tokenExpiry, log,
+  getToken, rotateSession, liveMatch, mintSession, manifestServes, tokenExpiry, log,
 };

@@ -8,7 +8,9 @@
  *      a stale pointer beats a wrong one
  *
  * A license cannot be renewed before it expires, so this prints the current one
- * until the API rotates it; the publisher only writes when the payload changes.
+ * until the API rotates it; when it has expired, mintSession() rotates the
+ * account session rather than publishing a dead license. The publisher only
+ * writes when the payload changes, or when the heartbeat is over ten minutes old.
  */
 const { liveMatch, mintSession, manifestServes, log } = require('./session.cjs');
 
