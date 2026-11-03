@@ -51,8 +51,10 @@ if (hint) {
 // The on-demand minter, if it is up: same shape, and it must answer for the
 // match that is on air right now.
 const minted = await fetchMint(hint?.mint || MINT_FALLBACK);
+// null means either "minter unreachable" or "minter says nothing is on air";
+// both are legitimate, so print which one it is.
 check('minter answers or is down', minted === null || typeof minted.mpd === 'string',
-  minted ? `match ${minted.match}, expires ${minted.expires}` : 'unreachable');
+  minted ? `match ${minted.match}, expires ${minted.expires}` : 'no live session returned');
 
 const manifest = await findLiveManifest({ timeout: 4000 });
 check('manifest probe returns a manifest or null', manifest === null || manifest.url.endsWith('.mpd'),

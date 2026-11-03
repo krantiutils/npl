@@ -64,6 +64,12 @@ player    -> dash.js + dashjs protectionData (com.widevine.alpha)
 standings -> /public/sports/v1/.../points
 ```
 
+Liveness comes from two signals, because the platform's own flag is late: on
+3 Nov the broadcast was up at 10:55 UTC while the fixture still said
+`not_started` at 11:20. So a fixture counts as live when the API says so *or*
+when its scheduled start has passed and it is not completed; whether anything is
+really playable is then settled by the manifest and the license.
+
 Refreshes every 60 s.
 
 ### How the license rotates
