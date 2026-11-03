@@ -35,6 +35,12 @@ let attachedKey = '';
 let mintUrl = MINT_FALLBACK;
 let lastMintTry = 0;
 let lastMint = null;
+let retryTimer = null;
+
+function scheduleRetry(ms) {
+  if (retryTimer) return;
+  retryTimer = setTimeout(() => { retryTimer = null; refresh(); }, ms);
+}
 
 function setStatus(text, kind = '') {
   const s = $('#status');
@@ -131,15 +137,31 @@ async function resolveSession(hint) {
 function renderLive(match, session, publishing) {
   $('#headline').textContent = match ? `${match.short_name} — live` : 'live';
 
-  if (!session) {
-    $('#stage').hidden = true;
-    if (publishing) setStatus('match is live but no fresh license yet', 'warn');
-    else setStatus('match is live but no feed is publishing', 'warn');
-    return false;
+  if (session) {
+    setStatus(`${match?.name || 'live'} · ${sessionLabel(session)}`, 'live');
+    attachStream(session);
+    return true;
   }
-  setStatus(`${match?.name || 'live'} · ${sessionLabel(session)}`, 'live');
-  attachStream(session);
-  return true;
+
+  // Nothing fresh to start with. If a player is already attached it keeps its
+  // media keys and its buffer -- a license that has since expired does not stop
+  // playback that has already begun, so tearing it down would be the bug.
+  const video = $('#player');
+  const playing = !!player && !!attachedKey && video && !video.paused && video.currentTime > 0;
+  if (playing) {
+    setStatus('playing · license has expired, reload for a fresh one', 'live');
+    return true;
+  }
+
+  $('#stage').hidden = true;
+  if (publishing) {
+    // The API reissues a license only when the old one dies, and not instantly:
+    // keep asking, the next refresh usually gets it.
+    setStatus('match is live · waiting for a fresh license', 'warn');
+  } else {
+    setStatus('match is live but no feed is publishing', 'warn');
+  }
+  return false;
 }
 
 function renderIdle(next) {
@@ -222,7 +244,10 @@ async function refresh() {
         // nothing usable: say whether the feed is even up, so "no license yet"
         // and "nobody is publishing" don't look the same
         const manifest = await findLiveManifest();
-        renderLive(live[0], null, !!manifest);
+        const started = renderLive(live[0], null, !!manifest);
+        // a license that has just expired is reissued by the platform, so come
+        // back inside a minute instead of waiting for the next full refresh
+        if (started) scheduleRetry(30000);
       } else {
         renderLive(live[0], session);
       }
