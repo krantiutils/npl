@@ -48,6 +48,14 @@ main {
 
 #next { margin-bottom: 22px; }
 
+/* platform notices (e.g. "Safari cannot play Widevine") */
+main p.warn {
+  color: var(--live);
+  font-size: 12px;
+  margin: 0 0 18px;
+}
+main p.warn a { color: inherit; }
+
 .row {
   display: flex;
   justify-content: space-between;
