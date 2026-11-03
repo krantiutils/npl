@@ -54,11 +54,25 @@ export async function fetchFixtures() {
   return out;
 }
 
-export function splitFixtures(list) {
-  const live = list.filter((m) => m.is_live || m.status === 'started');
+// The platform's `status` lags the broadcast badly: on 3 Nov the feed was live
+// from 10:55 UTC (publishTime advancing) while the fixture still said
+// `not_started` at 11:20, so a page that trusted only the flag showed "next
+// match" over a live broadcast. A fixture whose start time has passed and that is
+// not completed counts as live too; whether anything is really playable is then
+// decided by the manifest and the license.
+const START_GRACE_S = 5 * 60;
+const LIVE_WINDOW_S = 4 * 3600;
+
+export function splitFixtures(list, now = Date.now() / 1000) {
+  const live = list.filter((m) => m.is_live || m.status === 'started' ||
+    (m.status !== 'completed' && m.status !== 'cancelled' &&
+     m.start_at <= now + START_GRACE_S && now - m.start_at <= LIVE_WINDOW_S));
+
+  const liveKeys = new Set(live.map((m) => m.key));
   const next = list
-    .filter((m) => m.status === 'not_started' && !m.is_live)
+    .filter((m) => m.status === 'not_started' && !liveKeys.has(m.key))
     .sort((a, b) => a.start_at - b.start_at);
+
   return { live, next };
 }
 
