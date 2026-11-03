@@ -1,11 +1,11 @@
 {
-  "checked": "2026-11-03T13:55:39Z",
-  "live": true,
-  "match": "LBL-vs-PKA",
-  "mpd": "https://ott-lb.nettv.com.np/npl/live_match/index.mpd",
-  "license_url": "https://widevine-dash.ezdrm.com/proxy?pX=196792&user_id=NjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0&CustomData=eyJyZXNlbGxlcl9pZCI6IjUiLCJzdWJzY3JpYmVyX2lkIjoiOTMzNzcwOSIsInNlcmlhbCI6InZvaWRhc2gtNSIsIm1hdGNoX2tleSI6ImEtcnotLWNyaWNrZXQtLWxFMjEwMzE2NDY5Nzk2Nzc1NTMwOSIsImV4cCI6MTc5MzcxNTAzMCwic2lkIjoiY2FlNmQ3OTgxMTg1YzE3YmQ4MmM3NWZhMzIyMmFiOTQiLCJwbGF0Zm9ybSI6IndlYiIsImVudGl0bGVkX3VudGlsIjoxNzkzNzI4NTMwLCJtYXhfY29uY3VycmVudCI6MSwic3Vic2NyaWJlcl9zdGJfaWQiOiIxMTg0NTM3OSIsInViYl9ndWlkIjoiNjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0In0.M-Fe4ULZTySda3m6gKDNvcMq8XfIue9oE8U52FXNSKA",
-  "expires": "2026-11-03T14:10:30+00:00",
-  "drm": "widevine",
-  "path": "/npl/live_match/index.mpd",
+  "checked": "2026-11-03T14:05:52Z",
+  "live": false,
+  "match": null,
+  "mpd": null,
+  "license_url": null,
+  "expires": null,
+  "drm": null,
+  "path": null,
   "mint": "https://npl-mint.thapa-ashish.com.np/mint"
 }
