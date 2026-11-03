@@ -8,4 +8,4 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 tar -cz --exclude='node_modules' --exclude='._*' --exclude='live.json' . \
-  | ssh -o BatchMode=yes cdjk 'cd ~/npl && tar -xz && find . -name "._*" -delete && chmod +x ci/*.sh && git add -A && git commit -q -m "'"${1:-site update}"'" && git push -q origin main && echo "pushed $(git rev-parse --short HEAD)"'
+  | ssh -o BatchMode=yes cdjk 'cd ~/npl && tar -xz && find . -name "._*" -delete && chmod +x ci/*.sh && git pull --rebase -q origin main && git add -A && git commit -q -m "'"${1:-site update}"'" && git push -q origin main && echo "pushed $(git rev-parse --short HEAD)"'

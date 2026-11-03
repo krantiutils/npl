@@ -66,6 +66,22 @@ standings -> /public/sports/v1/.../points
 
 Refreshes every 60 s.
 
+### Known limit: the license only rotates while the account has a device playing
+
+The license is bound to the subscription's *active device session* (the API
+returns the current one even when you ask for `stbs/voidash-5`). In practice:
+
+* while a phone/TV on the same account is streaming, the platform issues a fresh
+  license every ~15 minutes and this page follows it;
+* once nothing on the account is playing, the API keeps returning the last
+  license, it expires, and the page sits on "waiting for a fresh license";
+* the account allows **one** session, so the minter cannot log in and hold its own
+  while another device is signed in (`POST /v2/subscribers/login` answers
+  *"Number of logged in sessions exceeded"*).
+
+If the page must work on its own, sign out on the other device so the minter can
+own the session, or use a second subscription for it.
+
 ## Publishing
 
 Site: repo root must be this directory so it lands at
