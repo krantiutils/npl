@@ -1,10 +1,10 @@
 {
-  "checked": "2026-11-03T11:21:51Z",
+  "checked": "2026-11-03T11:25:57Z",
   "live": true,
   "match": "LBL-vs-PKA",
   "mpd": "https://ott-lb.nettv.com.np/npl/live_match/index.mpd",
-  "license_url": "https://widevine-dash.ezdrm.com/proxy?pX=196792&user_id=NjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0&CustomData=eyJyZXNlbGxlcl9pZCI6IjUiLCJzdWJzY3JpYmVyX2lkIjoiOTMzNzcwOSIsInNlcmlhbCI6InZvaWRhc2gtNSIsIm1hdGNoX2tleSI6ImEtcnotLWNyaWNrZXQtLWxFMjEwMzE2NDY5Nzk2Nzc1NTMwOSIsImV4cCI6MTc5MzcwNTE2MCwic2lkIjoiMTI0ZGI0YTE3MTAyNzVjM2Q3ODA0YThhMDg3NjlhMjQiLCJwbGF0Zm9ybSI6IndlYiIsImVudGl0bGVkX3VudGlsIjoxNzkzNzE4NjYwLCJtYXhfY29uY3VycmVudCI6MSwic3Vic2NyaWJlcl9zdGJfaWQiOiIxMTg0NTM3OSIsInViYl9ndWlkIjoiNjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0In0.yfY2H49PDobh_b8Y4sYZ5l9QzfIIJgF4kCHFRne-ia4",
-  "expires": "2026-11-03T11:26:00+00:00",
+  "license_url": "https://widevine-dash.ezdrm.com/proxy?pX=196792&user_id=NjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0&CustomData=eyJyZXNlbGxlcl9pZCI6IjUiLCJzdWJzY3JpYmVyX2lkIjoiOTMzNzcwOSIsInNlcmlhbCI6InZvaWRhc2gtNSIsIm1hdGNoX2tleSI6ImEtcnotLWNyaWNrZXQtLWxFMjEwMzE2NDY5Nzk2Nzc1NTMwOSIsImV4cCI6MTc5MzcwNjAwNSwic2lkIjoiMTYyNWFlMDkyMzA4YzU2MzljY2Y5Zjk1MDAxNmFkM2YiLCJwbGF0Zm9ybSI6IndlYiIsImVudGl0bGVkX3VudGlsIjoxNzkzNzE5NTA1LCJtYXhfY29uY3VycmVudCI6MSwic3Vic2NyaWJlcl9zdGJfaWQiOiIxMTg0NTM3OSIsInViYl9ndWlkIjoiNjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0In0.XmySGORyDiGi7YCagqJbgBVEgBD2yvu6ZjvQxKzlVz8",
+  "expires": "2026-11-03T11:40:05+00:00",
   "drm": "widevine",
   "path": "/npl/live_match/index.mpd",
   "mint": "https://npl-mint.thapa-ashish.com.np/mint"
