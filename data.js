@@ -1,20 +1,42 @@
 // Data layer: everything that talks to the network or shapes data.
 // No DOM here, so it can be exercised directly in Node (see test-data.mjs).
+//
+// The feed changed on 3 Nov 2026: NetTV stopped publishing HLS for the NPL and
+// moved to DASH + Widevine. What that means for this file:
+//   * the manifest is a .mpd (no wmsAuthSign any more, the segments are open)
+//   * the picture is CENC-encrypted, so the player needs a Widevine license
+//   * that license is minted per subscriber, lives 15 minutes, and only comes
+//     from a logged-in API call -- never from a public URL
+// See fetchLiveHint() (the CI-published copy) and fetchMint() (on-demand).
 
 export const API = 'https://ott-resources.geniustv.geniussystems.com.np/public/sports/v1/namespaces/-/tournaments';
-export const EDGE = 'https://ottnlive-fstream.nettvstreamz.com';
 
-// Two layouts have been seen for the same league, and they are not interchangeable:
-//   /live_hls/npl_match_<n>/playlist.m3u8   match-day feed (underscore before the number)
-//   /ottnpweb/npl_live<n>/index.m3u8        channel feed (no underscore)
-// Probe both; whichever answers is the feed for the live match.
-export const CHANNELS = [
-  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/live_hls/npl_match_${n}/playlist.m3u8`),
-  ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/ottnpweb/npl_live${n}/index.m3u8`),
+// Manifest hosts seen so far. ott-lb is the canonical one the API hands back
+// (it 302s to one of the ott-edge-* hosts); the others are kept so a host move
+// does not take the page down again.
+export const EDGE_HOSTS = [
+  'https://ott-lb.nettv.com.np',
+  'https://ott-edge-mtdc.nettv.com.np',
+  'https://ottnlive-fstream.nettvstreamz.com',
 ];
 
-const getJSON = async (url) => {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+// The number is gone from the path: it used to be /npl/live_match6, now every
+// match is simply /npl/live_match. The older layouts are probed afterwards in
+// case they come back.
+export const MPD_PATHS = [
+  '/npl/live_match/index.mpd',
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => `/npl/live_match${n}/index.mpd`),
+];
+
+// Where the on-demand minter lives. CI rewrites this through live.json; the
+// constant is the fallback for when live.json cannot be read at all.
+export const MINT_FALLBACK = 'https://npl-mint.thapa-ashish.com.np/mint';
+
+// Don't start a stream with a license that is about to die.
+const LICENSE_SKEW_S = 90;
+
+const getJSON = async (url, init) => {
+  const res = await fetch(url, init);
   if (!res.ok) throw new Error(`${res.status} ${url}`);
   return res.json();
 };
@@ -73,48 +95,96 @@ export function standingsGroups(json) {
   return groups;
 }
 
-/** Master playlist -> variants, highest resolution first. */
-export function parseMaster(text) {
-  const lines = text.split(/\r?\n/);
-  const variants = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
-    const m = /RESOLUTION=(\d+)x(\d+)/.exec(lines[i]);
-    const uri = (lines[i + 1] || '').trim();
-    if (!uri || uri.startsWith('#')) continue;
-    variants.push({ uri, width: m ? +m[1] : 0, height: m ? +m[2] : 0 });
-  }
-  return variants.sort((a, b) => b.height - a.height);
+/** Is a license expiry stamp still usable? `expires` is the API's ISO string. */
+export function licenseValid(expires, skewSeconds = LICENSE_SKEW_S) {
+  if (!expires) return false;
+  const t = Date.parse(expires);
+  if (!Number.isFinite(t)) return false;
+  return t - Date.now() > skewSeconds * 1000;
 }
 
+const timeoutSignal = (ms) => {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  return { signal: ctl.signal, done: () => clearTimeout(t) };
+};
+
 /**
- * The channels are served anonymously by the edge, so we just probe them all and
- * take the first that answers with a real master playlist. Returns null when no
- * match feed is publishing.
+ * Probe the manifest hosts for a live DASH manifest. Segments are open, so this
+ * needs no login -- but it returns no license, which is why it is only a fallback
+ * for "is anything publishing at all"; the player still needs one of the two
+ * license sources below.
  */
-export async function findLiveChannel({ timeout = 5000 } = {}) {
-  const probe = async (pathname) => {
-    const url = `${EDGE}${pathname}`;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), timeout);
+export async function findLiveManifest({ timeout = 5000 } = {}) {
+  const probe = async (url) => {
+    const ctl = timeoutSignal(timeout);
     try {
       const res = await fetch(url, { signal: ctl.signal });
       if (!res.ok) return null;
       const text = await res.text();
-      if (!text.startsWith('#EXTM3U')) return null;
-      const variants = parseMaster(text);
-      if (!variants.length) return null;
-      return { path: pathname, url, variants };
+      if (!text.includes('<MPD')) return null;
+      return { url, drm: /ContentProtection/.test(text) };
     } catch {
       return null;
     } finally {
-      clearTimeout(t);
+      ctl.done();
     }
   };
 
-  // all candidates at once: there are only sixteen and they answer in ms
-  const results = await Promise.all(CHANNELS.map(probe));
-  return results.find(Boolean) || null;
+  for (const path of MPD_PATHS) {
+    // one host at a time: the first host answers for all paths, and this keeps
+    // the probe to a handful of requests instead of a fan-out of dozens
+    for (const host of EDGE_HOSTS) {
+      const hit = await probe(`${host}${path}`);
+      if (hit) return { ...hit, path, host };
+    }
+  }
+  return null;
+}
+
+/**
+ * CI publishes the current session to live.json at the repo root, roughly every
+ * two minutes: the DASH URL plus the Widevine license it minted.
+ *
+ * A license cannot be renewed before it expires -- the API keeps handing back the
+ * same one until the old expires -- so `expires` is the freshness test, not
+ * `checked`. Missing/old `expires` means "there is nothing to play".
+ */
+export async function fetchLiveHint({ maxAgeMin = 20 } = {}) {
+  try {
+    // GitHub Pages caches live.json for ~10 min; the query string busts the CDN,
+    // otherwise a match going live takes ten minutes to appear on the site.
+    const res = await fetch(`live.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const j = await res.json();
+    if (!j || !j.live || typeof j.mpd !== 'string') return null;
+    const ageMin = (Date.now() - new Date(j.checked).getTime()) / 60000;
+    if (!Number.isFinite(ageMin) || ageMin > maxAgeMin) return null;
+    return j;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask the minter on k2 for a session right now. Same shape as live.json, but
+ * fresh: this is what a viewer gets when the CDN copy of live.json is stale or
+ * its license has expired. Returns null when the minter is down.
+ */
+export async function fetchMint(base, { timeout = 6000 } = {}) {
+  if (!base) return null;
+  const ctl = timeoutSignal(timeout);
+  try {
+    const res = await fetch(base, { signal: ctl.signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (!res.ok) return null;
+    const j = await res.json();
+    if (!j || !j.live || typeof j.mpd !== 'string') return null;
+    return { ...j, source: 'mint' };
+  } catch {
+    return null;
+  } finally {
+    ctl.done();
+  }
 }
 
 export function fmtTime(iso) {
@@ -131,26 +201,5 @@ export function fmtTime(iso) {
     });
   } catch {
     return iso;
-  }
-}
-
-/**
- * CI publishes the resolved feed path to live.json at the repo root (it changes
- * between matches: /live_hls/npl_match_3 one day, /ottnpweb/npl_live3 another).
- * Prefer that hint; fall back to probing when it is missing or stale.
- */
-export async function fetchLiveHint({ maxAgeMin = 200 } = {}) {
-  try {
-    // GitHub Pages caches live.json for ~10 min; the query string busts the CDN,
-    // otherwise a match going live takes ten minutes to appear on the site.
-    const res = await fetch(`live.json?t=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const j = await res.json();
-    if (!j || !j.live || typeof j.path !== 'string') return null;
-    const ageMin = (Date.now() - new Date(j.checked).getTime()) / 60000;
-    if (!Number.isFinite(ageMin) || ageMin > maxAgeMin) return null;
-    return j;
-  } catch {
-    return null;
   }
 }

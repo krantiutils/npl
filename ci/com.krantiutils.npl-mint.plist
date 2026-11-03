@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.krantiutils.npl-mint</string>
+
+  <!-- On-demand Widevine session minter for https://krantiutils.github.io/npl/ -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/k2/npl-ci/bin/node</string>
+    <string>/Users/k2/npl-ci/mint.cjs</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/k2</string>
+    <key>PORT</key>
+    <string>8787</string>
+    <key>BIND</key>
+    <string>127.0.0.1</string>
+    <key>ALLOW_ORIGIN</key>
+    <string>https://krantiutils.github.io</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/k2/npl-ci/logs/mint.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/k2/npl-ci/logs/mint.log</string>
+</dict>
+</plist>

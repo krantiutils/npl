@@ -1,77 +1,68 @@
 #!/bin/bash
-# Dispatch the record workflow when a match is genuinely on air.
+# Publish the live session to live.json, every 2 minutes from launchd on k2.
 #
-# The old version probed anonymous HLS paths. That stopped working on 31 Oct: the
-# rendition is now /npl/live_match<N>/ on a rotating host and every playlist and
-# segment needs a signed wmsAuthSign. So we mint with the account instead, exactly
-# like the recorder does, and only dispatch when that URL actually serves a playlist.
+# 3 Nov 2026: NetTV moved the NPL feed to DASH + Widevine, which retired the old
+# job. It recorded HLS and published a playlist path; the playlist is gone (it is
+# /npl/live_match/index.mpd now, no match number, no token) and the picture is
+# CENC-encrypted, so a recording without a license is worthless. What the website
+# needs is the manifest plus the 15-minute Widevine license, so that is all this
+# does. Recording is not attempted: it is not possible without the license keys.
 #
-# Runs from launchd every 2 minutes on k2. Credentials live in ~/npl-ci/nettv.env
-# (0600) and the dispatch token in ~/npl-ci/gh-token (0600).
+# live.json is written through the GitHub contents API -- no clone here, so this
+# cannot fight with a push of the site -- and only when the payload changed, or
+# when the published heartbeat is more than ten minutes old. A match therefore
+# costs a handful of commits, not hundreds.
 set -u
 REPO=${REPO:-krantiutils/npl}
-RES=https://ott-resources.geniustv.geniussystems.com.np
-AUTH=https://ott-auth.geniustv.geniussystems.com.np
-DEVICE_UUID=${NETTV_DEVICE_UUID:-2258e2c2-9438-469c-8dd8-b31f911da230}
+WORK=${WORK:-$HOME/npl-ci}
 
 export PATH="$HOME/npl-ci/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 command -v node >/dev/null || { echo "node missing"; exit 1; }
 command -v gh >/dev/null || { echo "gh missing"; exit 1; }
 
-# creds + token
-# set -a: the login body is built by node, which only sees *exported* variables
-if [ -f "$HOME/npl-ci/nettv.env" ]; then set -a; . "$HOME/npl-ci/nettv.env"; set +a; fi
-[ -f "$HOME/npl-ci/gh-token" ] && export GH_TOKEN=$(cat "$HOME/npl-ci/gh-token")
-[ -z "${NETTV_USER:-}" ] || [ -z "${NETTV_PASS:-}" ] && { echo "no nettv creds"; exit 0; }
+[ -f "$WORK/nettv.env" ] && { set -a; . "$WORK/nettv.env"; set +a; }
+[ -f "$WORK/gh-token" ] && export GH_TOKEN=$(cat "$WORK/gh-token")
 
-# 1. which match does the platform consider live?
-fixtures=$(curl -sS --max-time 15 "$RES/public/sports/v1/namespaces/-/tournaments/fixtures" 2>/dev/null)
-live=$(printf '%s' "$fixtures" | node -e '
-let s = "";
-process.stdin.on("data", (d) => (s += d)).on("end", () => {
-  try {
-    const rows = JSON.parse(s).data || [];
-    let m = rows.find((x) => x.is_live || x.status === "started");
-    if (!m) {
-      // The platform flag lags (it never went live for the 31 Oct 17:00 game). If a
-      // a fixture start time has passed and it is still not_started, that is a match
-      // that should be on air -- let the mint below decide whether a feed exists.
-      const now = Date.now() / 1000;
-      m = rows.filter((x) => x.status === "not_started" && x.start_at <= now + 300 &&
-                               now - x.start_at <= 3 * 3600)
-              .sort((a, b) => b.start_at - a.start_at)[0];
-    }
-    if (!m) return;
-    const slug = `${m.team_a?.code || "?"}-vs-${m.team_b?.code || "?"}`;
-    process.stdout.write(`${m.key}|${slug}`);
-  } catch (e) {}
-});')
-[ -z "$live" ] && exit 0
-IFS='|' read -r KEY SLUG <<<"$live"
-
-# 2. already published this match?
-if gh release list --repo "$REPO" --limit 30 2>/dev/null | grep -q "$SLUG"; then exit 0; fi
-
-# 3. a run already going?
-state=$(gh run list --repo "$REPO" --workflow=record.yml --limit 1 --json status -q '.[0].status' 2>/dev/null || echo "")
-case "$state" in queued|in_progress|requested|waiting|pending) exit 0 ;; esac
-
-# 4. mint and prove the feed actually serves a playlist
-body=$(node -e 'process.stdout.write(JSON.stringify({username:process.env.NETTV_USER,password:process.env.NETTV_PASS,reseller_id:5,device_id:"MacOS|Chrome",device_unique_id:process.argv[1]}))' "$DEVICE_UUID")
-token=$(curl -sS --max-time 20 -X POST -H "Content-Type: application/json" -d "$body" "$AUTH/v2/subscribers/login" 2>/dev/null \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const w=v=>{if(!v||typeof v!=="object")return null;for(const[k,x]of Object.entries(v)){if(k==="access_token"&&typeof x==="string")return x;const r=w(x);if(r)return r}return null};const t=w(JSON.parse(s));if(t)process.stdout.write(t)}catch(e){}})')
-[ -z "$token" ] && { echo "login failed"; exit 0; }
-
-su=$(curl -sS --max-time 15 -H "Authorization: Bearer $token" -H "Accept: application/json" \
-  "$RES/subscriber/sports/v1/namespaces/5/subscribers/${NETTV_SUBSCRIBER:-9337709}/stbs/${NETTV_STB:-voidash-5}/cricket/matches/$KEY/stream-url" 2>/dev/null \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).data.stream_url||"")}catch(e){}})')
-[ -z "$su" ] && { echo "no stream_url yet for $SLUG"; exit 0; }
-
-code=$(curl -sSL -o /tmp/npl-trigger.m3u8 -w '%{http_code}' --max-time 12 "$su")
-magic=$(head -c 7 /tmp/npl-trigger.m3u8 2>/dev/null || true)
-if [ "$code" != "200" ] || [ "$magic" != "#EXTM3U" ]; then
-  echo "feed not serving yet for $SLUG (HTTP $code)"; exit 0
+# The account allows one concurrent session, so NETTV_USER/NETTV_PASS are only used
+# when the cached 46-hour token has run out; if a phone or TV is signed in, the
+# login fails and this exits without touching the published file.
+if ! node "$(dirname "$0")/publish.cjs" > /tmp/npl-live.json; then
+  echo "mint failed, leaving live.json alone"
+  exit 0
 fi
 
-gh workflow run record.yml --repo "$REPO" --ref main -f match="$KEY" >/dev/null 2>&1 \
-  && echo "$(date -u +%FT%TZ) dispatched for $SLUG ($KEY)"
+# what is published right now?
+remote=$(gh api "repos/$REPO/contents/live.json" --jq .content 2>/dev/null | tr -d '\n')
+SHA=$(gh api "repos/$REPO/contents/live.json" --jq .sha 2>/dev/null)
+REMOTE_JSON=""
+[ -n "$remote" ] && REMOTE_JSON=$(printf '%s' "$remote" | base64 -d 2>/dev/null)
+
+need=0
+if [ -z "$REMOTE_JSON" ]; then
+  need=1
+else
+  verdict=$(REMOTE_JSON="$REMOTE_JSON" NEW="$(cat /tmp/npl-live.json)" node -e '
+    const a = JSON.parse(process.env.REMOTE_JSON || "{}");
+    const b = JSON.parse(process.env.NEW || "{}");
+    const key = (x) => JSON.stringify([x.live, x.match, x.mpd, x.license_url, x.expires, x.mint]);
+    if (key(a) !== key(b)) { process.stdout.write("changed"); process.exit(0); }
+    const age = (Date.now() - new Date(a.checked).getTime()) / 60000;
+    process.stdout.write(age > 10 ? "stale" : "same");
+  ')
+  [ "$verdict" = "same" ] || need=1
+fi
+
+if [ "$need" = "0" ]; then
+  echo "live.json unchanged ($(node -e 'const j=require("/tmp/npl-live.json");process.stdout.write(j.live?`lic exp ${j.expires}`:"no match")'))"
+  exit 0
+fi
+
+CONTENT=$(base64 < /tmp/npl-live.json | tr -d '\n')
+SLUG=$(node -e 'const j=require("/tmp/npl-live.json");process.stdout.write(j.match||"no match")')
+args=(-X PUT "repos/$REPO/contents/live.json"
+      -f message="live.json: $SLUG $(date -u +%FT%TZ)"
+      -f content="$CONTENT" -f branch=main)
+[ -n "$SHA" ] && args+=(-f sha="$SHA")
+gh api "${args[@]}" >/dev/null 2>&1 \
+  && echo "$(date -u +%FT%TZ) published live.json: $SLUG" \
+  || echo "warn: could not publish live.json"

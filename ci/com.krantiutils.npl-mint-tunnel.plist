@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.krantiutils.npl-mint-tunnel</string>
+
+  <!-- npl-mint.thapa-ashish.com.np -> http://127.0.0.1:8787 (the minter) -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/cloudflared</string>
+    <string>tunnel</string>
+    <string>--config</string>
+    <string>/Users/k2/.cloudflared/npl-mint.yml</string>
+    <string>run</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/k2/npl-ci/logs/mint-tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/k2/npl-ci/logs/mint-tunnel.log</string>
+</dict>
+</plist>
