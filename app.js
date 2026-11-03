@@ -105,8 +105,12 @@ function attachStream(session) {
     }
     setStatus('stream error: ' + (err.message || err.code || 'unknown'), 'warn');
   });
+  // `true` = let dash.js start playback itself, after it has attached the source.
+  // Do not call video.play() here: on a live DASH stream that races the attach and
+  // leaves dash.js scheduling nothing, so playback dies at the end of the first
+  // buffer (~18 s) and never refetches. The element is muted, so autoplay is
+  // allowed; the click handler below covers a browser that blocks it anyway.
   player.initialize(video, session.mpd, true);
-  video.play().catch(() => {}); // autoplay may be blocked until the user clicks
 }
 
 function sessionLabel(session) {
