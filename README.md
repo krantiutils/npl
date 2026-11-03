@@ -79,8 +79,30 @@ returns the current one even when you ask for `stbs/voidash-5`). In practice:
   while another device is signed in (`POST /v2/subscribers/login` answers
   *"Number of logged in sessions exceeded"*).
 
-If the page must work on its own, sign out on the other device so the minter can
-own the session, or use a second subscription for it.
+If the page must work on its own, give the session to k2 — see below.
+
+### Holding the session on k2
+
+The account allows exactly one session, and it counts *devices*, not logins: a
+login that presents the `device_unique_id` of the device already holding it **takes
+that session over** instead of being refused. k2 does that on purpose
+(`NETTV_DEVICE_ID=iPad`, `NETTV_DEVICE_UUID=BFC14D2C-...` in `~/npl-ci/nettv.env`),
+so the page owns the only session and the iPad, when it logs in again, refreshes
+the same one rather than fighting for a second.
+
+```bash
+# move the session to this host, printing only the new token's expiry
+NETTV_DEVICE_UUID=<the id from the login error> NETTV_DEVICE_ID=iPad ci/login-takeover.sh
+```
+
+Two failure modes this closes:
+
+* a token can be **revoked before it expires** (a login from another device does
+  it) while `exp` still looks healthy — the old code kept reusing it and served a
+  frozen license for an hour. `mintSession()` now retries once through a fresh
+  login on a 401.
+* a login refused with *"Number of logged in sessions exceeded"* means some other
+  device holds the slot; take the session over or sign out there.
 
 ## Publishing
 

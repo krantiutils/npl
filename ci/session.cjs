@@ -22,7 +22,11 @@ const TOKEN_FILE = process.env.TOKEN_FILE || path.join(HOME, 'npl-ci/token.txt')
 const ENV_FILE = process.env.ENV_FILE || path.join(HOME, 'npl-ci/nettv.env');
 const SUBSCRIBER = process.env.NETTV_SUBSCRIBER || '9337709';
 const STB = process.env.NETTV_STB || 'voidash-5';
+// The account allows one session. Logging in with the device_unique_id of the
+// device that already holds it takes that session over instead of being refused,
+// which is why this is configurable: k2 adopts the iPad's id (see README).
 const DEVICE_UUID = process.env.NETTV_DEVICE_UUID || '2258e2c2-9438-469c-8dd8-b31f911da230';
+const DEVICE_ID = process.env.NETTV_DEVICE_ID || 'MacOS|Chrome';
 const LOGIN_BACKOFF_MS = Number(process.env.LOGIN_BACKOFF_MS || 60000);
 
 // logs go to stderr: publish.cjs owns stdout, which carries the JSON document
@@ -57,7 +61,7 @@ async function login() {
   if (!user || !pass) throw new Error('no NETTV_USER/NETTV_PASS on this host');
   const body = JSON.stringify({
     username: user, password: pass, reseller_id: 5,
-    device_id: 'MacOS|Chrome', device_unique_id: DEVICE_UUID,
+    device_id: DEVICE_ID, device_unique_id: DEVICE_UUID,
   });
   const res = await fetch(`${AUTH}/v2/subscribers/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body,
@@ -83,10 +87,19 @@ async function login() {
 
 let loginBlockedUntil = 0;
 
-async function getToken() {
-  let token = '';
-  try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { /* none yet */ }
-  if (token && tokenExpiry(token) > Date.now() + 5 * 60000) return token;
+/**
+ * The cached token, or a fresh login.
+ *
+ * `force` ignores the cache: a token can be revoked before it expires (a login
+ * from another device does exactly that) while its `exp` still looks healthy, so
+ * the only way to tell is to try it and re-login on a 401.
+ */
+async function getToken({ force = false } = {}) {
+  if (!force) {
+    let token = '';
+    try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch { /* none yet */ }
+    if (token && tokenExpiry(token) > Date.now() + 5 * 60000) return token;
+  }
   if (Date.now() < loginBlockedUntil) throw new Error('login backed off -- another device holds the only session');
   try {
     return await login();
@@ -115,16 +128,29 @@ async function liveMatch() {
   return { key: m.key, slug: `${m.team_a?.code || '?'}-vs-${m.team_b?.code || '?'}`, name: m.name };
 }
 
-/** Manifest + license for one match. */
-async function mintSession(key) {
-  const token = await getToken();
+async function streamUrl(key, token) {
   const url = `${RES}/subscriber/sports/v1/namespaces/5/subscribers/${SUBSCRIBER}/stbs/${STB}/cricket/matches/${key}/stream-url`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     signal: AbortSignal.timeout(15000),
   });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`stream-url ${res.status}: ${text.slice(0, 200)}`);
+  return { status: res.status, text: await res.text() };
+}
+
+/**
+ * Manifest + license for one match.
+ *
+ * A 401 here means the token was revoked, not that the match is gone: the site
+ * used to sit on an expired license for an hour because the cached token still
+ * had a valid `exp`. Re-authenticate once and retry.
+ */
+async function mintSession(key) {
+  let { status, text } = await streamUrl(key, await getToken());
+  if (status === 401) {
+    log('token rejected, logging in again');
+    ({ status, text } = await streamUrl(key, await getToken({ force: true })));
+  }
+  if (status !== 200) throw new Error(`stream-url ${status}: ${text.slice(0, 200)}`);
   const d = JSON.parse(text).data || {};
   if (!d.stream_url) throw new Error('stream-url returned no stream_url');
   if (!d.license_url) throw new Error(`stream-url returned no license_url (is_drm=${d.is_drm})`);
