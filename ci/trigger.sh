@@ -46,6 +46,9 @@ else
     const b = JSON.parse(process.env.NEW || "{}");
     const key = (x) => JSON.stringify([x.live, x.match, x.mpd, x.license_url, x.expires, x.mint]);
     if (key(a) !== key(b)) { process.stdout.write("changed"); process.exit(0); }
+    // Nothing on air and nothing changed: no heartbeat is worth a commit. The
+    // heartbeat only exists so a dead publisher is visible while a match is on.
+    if (!a.live && !b.live) { process.stdout.write("same"); process.exit(0); }
     const age = (Date.now() - new Date(a.checked).getTime()) / 60000;
     process.stdout.write(age > 10 ? "stale" : "same");
   ')
