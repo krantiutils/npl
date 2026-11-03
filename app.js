@@ -32,6 +32,7 @@ const el = (tag, cls, text) => {
 
 let player = null;
 let attachedKey = '';
+let attachedMpd = '';
 let mintUrl = MINT_FALLBACK;
 let lastMintTry = 0;
 let lastMint = null;
@@ -68,12 +69,33 @@ function teardown() {
     player = null;
   }
   attachedKey = '';
+  attachedMpd = '';
 }
+
+// A player that is producing frames is worth keeping: its keys are already in the
+// CDM, and rebuilding it for a newer license costs a visible five-second freeze
+// every time the license rotates. So track progress and only rebuild when the
+// picture has actually stopped.
+let lastFrames = -1;
+let lastFramesAt = 0;
+setInterval(() => {
+  const video = $('#player');
+  if (!player || !video) return;
+  const f = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().totalVideoFrames : video.currentTime;
+  if (f !== lastFrames) { lastFrames = f; lastFramesAt = Date.now(); }
+}, 4000);
+
+const progressing = () => Date.now() - lastFramesAt < 20000;
 
 function attachStream(session) {
   const video = $('#player');
   const key = session.mpd + '|' + session.license_url;
   if (attachedKey === key) return;
+  if (attachedKey && attachedMpd === session.mpd && progressing()) {
+    // Same stream, still playing: the license changed but this player does not
+    // need it. Keep it; the next rebuild (or an error) picks up the new one.
+    return;
+  }
 
   if (!window.dashjs) {
     setStatus('player library did not load (dash.js blocked?)', 'warn');
@@ -82,6 +104,7 @@ function attachStream(session) {
 
   teardown();
   attachedKey = key;
+  attachedMpd = session.mpd;
   $('#stage').hidden = false;
 
   player = window.dashjs.MediaPlayer().create();
