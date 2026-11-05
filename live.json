@@ -1,10 +1,10 @@
 {
-  "checked": "2026-11-05T13:10:15Z",
+  "checked": "2026-11-05T13:14:21Z",
   "live": true,
   "match": "LBL-vs-JKB",
   "mpd": "https://ott-lb.nettv.com.np/npl/live_match/index.mpd",
-  "license_url": "https://widevine-dash.ezdrm.com/proxy?pX=196792&user_id=NjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0&CustomData=eyJyZXNlbGxlcl9pZCI6IjUiLCJzdWJzY3JpYmVyX2lkIjoiOTMzNzcwOSIsInNlcmlhbCI6InZvaWRhc2gtNSIsIm1hdGNoX2tleSI6ImEtcnotLWNyaWNrZXQtLWxwMjEwMzE2NDY5ODkyODI1MDkyNiIsImV4cCI6MTc5Mzg4NDQ3MCwic2lkIjoiOTNmZDJhN2FhZjYzOGVlNjdiYTYzNTQ2MWU5YjNiYWYiLCJwbGF0Zm9ybSI6IndlYiIsImVudGl0bGVkX3VudGlsIjoxNzkzODk3OTcwLCJtYXhfY29uY3VycmVudCI6MSwic3Vic2NyaWJlcl9zdGJfaWQiOiIxMTg0NTM3OSIsInViYl9ndWlkIjoiNjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0In0.o14kV-N1pNc7Myr5sqSDue3Bm-NRV0hCmtKLXprDtjk",
-  "expires": "2026-11-05T13:14:30+00:00",
+  "license_url": "https://widevine-dash.ezdrm.com/proxy?pX=196792&user_id=NjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0&CustomData=eyJyZXNlbGxlcl9pZCI6IjUiLCJzdWJzY3JpYmVyX2lkIjoiOTMzNzcwOSIsInNlcmlhbCI6InZvaWRhc2gtNSIsIm1hdGNoX2tleSI6ImEtcnotLWNyaWNrZXQtLWxwMjEwMzE2NDY5ODkyODI1MDkyNiIsImV4cCI6MTc5Mzg4NTI5Niwic2lkIjoiMDRhZGI1OWRmNjY4MTg3NDY4NGMyNjE2ODgwZmNkNjAiLCJwbGF0Zm9ybSI6IndlYiIsImVudGl0bGVkX3VudGlsIjoxNzkzODk4Nzk2LCJtYXhfY29uY3VycmVudCI6MSwic3Vic2NyaWJlcl9zdGJfaWQiOiIxMTg0NTM3OSIsInViYl9ndWlkIjoiNjI1MzliYTctY2VhMS00NTViLTk4YjYtMjMyNDZhYzhjZjY0In0.x0zZQIn1QBxuuBQ57The59wrBRQHHiRkm2YjIvDzIXs",
+  "expires": "2026-11-05T13:28:16+00:00",
   "drm": "widevine",
   "path": "/npl/live_match/index.mpd",
   "mint": "https://npl-mint.thapa-ashish.com.np/mint"
